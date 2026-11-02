@@ -5,6 +5,7 @@
 
 [下载安装包](https://pdw1988.github.io/devtools-releases/) ·
 [Gitee 下载（国内快）](https://gitee.com/pdwcloud/devtools-releases/releases) ·
+[源码国内镜像（Gitee）](https://gitee.com/pdwcloud/codenow) ·
 [用户手册](用户手册.md) ·
 [开源协议 Apache-2.0](LICENSE)
 
