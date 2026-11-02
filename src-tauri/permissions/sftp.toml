@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-sftp"
+description = "码上连/码上追：SFTP 文件传输。spawn 系统自带 scp 客户端在用户界面上填的本机路径与服务器路径之间复制一个文件（上行/下行由参数指定），凭会话号轮询状态或终止传输。密码经 askpass 只在内存传递（见 main.rs），不记录传输内容；远端路径带空白直接拒绝。"
+commands.allow = ["sftp_start", "sftp_check", "sftp_cancel"]

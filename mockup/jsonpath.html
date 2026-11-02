@@ -1,0 +1,427 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>JSONPath · 码上 CodeNow 原型</title>
+<link rel="stylesheet" href="_theme.css">
+<style>
+  textarea#json{ min-height:470px; font-size:12.5px; line-height:1.7 }
+  .expr{ display:flex; align-items:center; border:1px solid var(--line2); border-radius:var(--r2);
+         background:var(--panel2); overflow:hidden; transition:.15s }
+  .expr:focus-within{ box-shadow:0 0 0 3px color-mix(in srgb, var(--acc) 14%, transparent) }
+  .expr.bad{ border-color:var(--bad) }
+  .expr .sl{ padding:0 12px; font:600 16px/1 var(--mono); color:var(--acc) }
+  .expr input{ flex:1; background:none; border:0; outline:none; color:var(--txt); font:14.5px/1.6 var(--mono); padding:13px 12px 13px 0 }
+  .hints{ display:flex; flex-direction:column; gap:6px }
+  .hint-row{ display:flex; align-items:center; gap:10px; padding:7px 10px; border:1px solid var(--line);
+             border-radius:var(--r2); cursor:pointer; transition:.14s }
+  .hint-row:hover{ border-color:var(--line2); background:color-mix(in srgb, var(--acc) 8%, transparent) }
+  .hint-row code{ font:12.5px/1.4 var(--mono); color:var(--acc) }
+  .hint-row .ds{ font-size:12.5px; color:var(--dim) }
+  .hint-row.on{ border-color:var(--line2); background:color-mix(in srgb, var(--acc) 11%, transparent) }
+</style>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="jsonpath"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">🔎 JSONPath</div>
+        <div class="sub">粘进来自动格式化 · 表达式一改结果就变</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">粘贴即格式化 · 无「查询」按钮</span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-in">
+        <div class="split even">
+          <div class="col">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">JSON</span>
+                <span class="who" id="jstat"></span>
+                <div class="spacer"></div>
+                <button class="mini" id="min">压缩成一行</button>
+              </div>
+              <div class="cbody" style="padding:0">
+                <textarea class="fld" id="json" spellcheck="false"
+                  style="border:0;border-radius:0;background:var(--panel2)"
+                  placeholder="粘一段 JSON 进来 —— 格式化是自动的，不用点按钮"></textarea>
+              </div>
+              <div class="acts" id="jerr" style="display:none"></div>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="card">
+              <i class="corner br"></i>
+              <div class="chead"><span class="dot"></span><span class="h">JSONPath 表达式</span>
+                <div class="spacer"></div><span class="tag hi" id="cnt">—</span></div>
+              <div class="cbody stack">
+                <div class="expr" id="exprWrap">
+                  <span class="sl">⌕</span>
+                  <input id="expr" spellcheck="false" autocomplete="off" autofocus>
+                </div>
+                <div id="perr"></div>
+                <div class="hints" id="hints"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="chead"><span class="h">查询结果</span>
+                <div class="spacer"></div>
+                <div class="seg" id="view">
+                  <button data-v="json" class="on">JSON</button>
+                  <button data-v="path">路径表</button>
+                </div>
+                <button class="mini" id="cp">复制</button>
+              </div>
+              <div class="cbody" style="padding:0">
+                <pre id="out" style="margin:0;padding:13px 14px;font:13.5px/1.75 var(--mono);max-height:420px;overflow:auto"></pre>
+                <div class="scroll lg" id="paths" style="display:none"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script src="_data.js"></script>
+<script>
+const { esc, jsonHi, copy } = UI
+const $ = s => document.querySelector(s)
+
+const SAMPLE = {
+  code: 0, message: 'ok',
+  data: {
+    total: 3, page: 1, size: 20,
+    list: [
+      { id: 1001, username: 'alice', status: 1, amount: 199.00, createTime: '2026-08-24 10:30:00',
+        orders: [{ orderNo: 'NO20260824001', total: 199.00, status: 1 }] },
+      { id: 1002, username: 'bob', status: 0, amount: 0, createTime: '2026-08-23 09:12:44', orders: [] },
+      { id: 1003, username: 'carol', status: 1, amount: 528.50, createTime: '2026-08-22 21:05:07',
+        orders: [{ orderNo: 'NO20260822007', total: 329.50, status: 3 },
+                 { orderNo: 'NO20260822008', total: 199.00, status: 1 }] },
+    ],
+  },
+}
+
+const HINTS = [
+  ['$.data.list[*].username', '取所有用户名'],
+  ['$..amount', '递归找所有 amount（含嵌套）'],
+  ['$.data.list[?(@.status==1)]', '过滤 status=1'],
+  ['$.data.list[?(@.orders.length>0)].id', '有订单的用户 id'],
+  ['$.data.list[?(@.amount>200)].username', '金额大于 200 的用户名'],
+  ['$.data.list[0,1]', '取前两个'],
+  ['$.data.list[-1:]', '取最后一个'],
+  ['$.data.*~', '取 data 下的键名'],
+  ['$..orders[*].orderNo', '所有订单号'],
+]
+
+/* ================= 迷你 JSONPath =================
+   够演示的子集：. [] [*] [n] [n,m] [s:e] ..name [?(@.x==1)] *~
+   带路径一起算：只回值的话，`$..amount` 出来一串数字，用户看不出哪个是谁的。 */
+function findClose(s, i) {
+  let d = 0, q = null
+  for (; i < s.length; i++) {
+    const ch = s[i]
+    if (q) { if (ch === q) q = null; continue }
+    if (ch === "'" || ch === '"') { q = ch; continue }
+    if (ch === '[') d++
+    if (ch === ']') { d--; if (!d) return i }
+  }
+  throw new Error('中括号没闭合')
+}
+
+function tokenize(p) {
+  p = p.trim()
+  const t = []
+  let i = 0
+  if (p[0] === '$') i = 1
+  while (i < p.length) {
+    if (p[i] === '.') {
+      if (p[i + 1] === '.') {
+        i += 2
+        if (p[i] === '*') { t.push({ k: 'recAll' }); i++; continue }
+        if (p[i] === '[') { t.push({ k: 'recAll' }); continue }
+        const m = /^[\w$]+/.exec(p.slice(i))
+        if (!m) throw new Error('.. 后面要跟字段名')
+        t.push({ k: 'recName', v: m[0] }); i += m[0].length
+        continue
+      }
+      i++
+      if (p[i] === '*') {
+        i++
+        if (p[i] === '~') { t.push({ k: 'keys' }); i++ } else t.push({ k: 'wild' })
+        continue
+      }
+      const m = /^[\w$]+/.exec(p.slice(i))
+      if (!m) throw new Error('点后面缺字段名')
+      i += m[0].length
+      if (p[i] === '~') { t.push({ k: 'child', v: m[0] }, { k: 'keys' }); i++ }
+      else t.push({ k: 'child', v: m[0] })
+      continue
+    }
+    if (p[i] === '[') {
+      const end = findClose(p, i)
+      const inner = p.slice(i + 1, end).trim()
+      i = end + 1
+      if (inner === '*') t.push({ k: 'wild' })
+      else if (inner.startsWith('?(')) t.push({ k: 'filter', v: inner.slice(2, inner.length - 1) })
+      else if (/^'.*'$/.test(inner) || /^".*"$/.test(inner)) t.push({ k: 'child', v: inner.slice(1, -1) })
+      else if (inner.includes(':')) t.push({ k: 'slice', v: inner })
+      else if (inner.includes(',')) t.push({ k: 'union', v: inner.split(',').map(s => s.trim()) })
+      else if (/^-?\d+$/.test(inner)) t.push({ k: 'index', v: +inner })
+      else throw new Error('看不懂的下标：[' + inner + ']')
+      continue
+    }
+    if (p[i] === '~') { t.push({ k: 'keys' }); i++; continue }
+    throw new Error('看不懂的字符：' + p[i])
+  }
+  return t
+}
+
+const isObj = v => v !== null && typeof v === 'object'
+const seg = (path, key) => path + (typeof key === 'number' ? `[${key}]` : `.${key}`)
+
+/** 取 @.a.b 这种相对路径的值，额外支持 .length */
+function pick(node, rel) {
+  let v = node
+  for (const k of rel) {
+    if (k === 'length' && Array.isArray(v)) { v = v.length; continue }
+    if (k === 'length' && typeof v === 'string') { v = v.length; continue }
+    if (!isObj(v)) return undefined
+    v = v[k]
+  }
+  return v
+}
+
+function testFilter(node, expr) {
+  // && 分开判，每段形如 @.a.b OP 值；没有 OP 时判真假（存在且非 false/0/null）
+  return expr.split('&&').every(part => {
+    const m = /^\s*@((?:\.[\w$]+)*)\s*(==|!=|>=|<=|>|<|=~)?\s*(.*?)\s*$/.exec(part)
+    if (!m) return false
+    const rel = m[1] ? m[1].slice(1).split('.') : []
+    const left = pick(node, rel)
+    if (!m[2]) return !!left
+    let rv = m[3]
+    if (/^'.*'$/.test(rv) || /^".*"$/.test(rv)) rv = rv.slice(1, -1)
+    else if (/^-?\d+(\.\d+)?$/.test(rv)) rv = +rv
+    else if (rv === 'true') rv = true
+    else if (rv === 'false') rv = false
+    else if (rv === 'null') rv = null
+    switch (m[2]) {
+      case '==': return left == rv       // eslint-disable-line eqeqeq —— JSONPath 的语义是宽松比较
+      case '!=': return left != rv
+      case '>': return left > rv
+      case '>=': return left >= rv
+      case '<': return left < rv
+      case '<=': return left <= rv
+      case '=~': return new RegExp(String(rv).replace(/^\/|\/$/g, '')).test(String(left))
+    }
+    return false
+  })
+}
+
+function step(nodes, t) {
+  const out = []
+  const each = (n, fn) => {
+    if (Array.isArray(n.v)) n.v.forEach((v, i) => fn(v, i))
+    else if (isObj(n.v)) Object.entries(n.v).forEach(([k, v]) => fn(v, k))
+  }
+  for (const n of nodes) {
+    switch (t.k) {
+      case 'child':
+        if (isObj(n.v) && !Array.isArray(n.v) && t.v in n.v) out.push({ v: n.v[t.v], p: seg(n.p, t.v) })
+        // 数组上取字段等于对每个元素取 —— 少写一层 [*]，跟主流实现一致
+        else if (Array.isArray(n.v)) n.v.forEach((x, i) => { if (isObj(x) && t.v in x) out.push({ v: x[t.v], p: seg(seg(n.p, i), t.v) }) })
+        break
+      case 'wild': each(n, (v, k) => out.push({ v, p: seg(n.p, k) })); break
+      case 'keys':
+        if (isObj(n.v)) Object.keys(n.v).forEach(k => out.push({ v: k, p: seg(n.p, k) + '~' }))
+        break
+      case 'index': {
+        if (!Array.isArray(n.v)) break
+        const i = t.v < 0 ? n.v.length + t.v : t.v
+        if (i in n.v) out.push({ v: n.v[i], p: seg(n.p, i) })
+        break
+      }
+      case 'union':
+        t.v.forEach(x => {
+          if (Array.isArray(n.v) && /^-?\d+$/.test(x)) {
+            const i = +x < 0 ? n.v.length + +x : +x
+            if (i in n.v) out.push({ v: n.v[i], p: seg(n.p, i) })
+          } else {
+            const key = x.replace(/^['"]|['"]$/g, '')
+            if (isObj(n.v) && key in n.v) out.push({ v: n.v[key], p: seg(n.p, key) })
+          }
+        })
+        break
+      case 'slice': {
+        if (!Array.isArray(n.v)) break
+        const [a, b, c] = t.v.split(':')
+        const len = n.v.length
+        const norm = (x, dflt) => { if (x === '' || x === undefined) return dflt; const i = +x; return i < 0 ? Math.max(0, len + i) : Math.min(i, len) }
+        const stp = c ? +c : 1
+        for (let i = norm(a, 0); i < norm(b, len); i += (stp || 1)) out.push({ v: n.v[i], p: seg(n.p, i) })
+        break
+      }
+      case 'filter': each(n, (v, k) => { if (isObj(v) && testFilter(v, t.v)) out.push({ v, p: seg(n.p, k) }) }); break
+      case 'recName': {
+        const walk = (v, p) => {
+          if (!isObj(v)) return
+          if (Array.isArray(v)) v.forEach((x, i) => walk(x, seg(p, i)))
+          else Object.entries(v).forEach(([k, x]) => { if (k === t.v) out.push({ v: x, p: seg(p, k) }); walk(x, seg(p, k)) })
+        }
+        walk(n.v, n.p)
+        break
+      }
+      case 'recAll': {
+        const walk = (v, p) => {
+          if (!isObj(v)) return
+          if (Array.isArray(v)) v.forEach((x, i) => { out.push({ v: x, p: seg(p, i) }); walk(x, seg(p, i)) })
+          else Object.entries(v).forEach(([k, x]) => { out.push({ v: x, p: seg(p, k) }); walk(x, seg(p, k)) })
+        }
+        walk(n.v, n.p)
+        break
+      }
+    }
+  }
+  return out
+}
+
+const query = (root, path) => tokenize(path).reduce(step, [{ v: root, p: '$' }])
+
+/* ================= 渲染 ================= */
+let VIEW = 'json'
+
+function parseJson(src) {
+  try { return { ok: true, v: JSON.parse(src) } }
+  catch (e) {
+    // 自己算行列：不同引擎的报错文案不一样，只有 position 靠得住
+    const m = /position\s+(\d+)/.exec(e.message)
+    let where = ''
+    if (m) {
+      const pos = +m[1], head = src.slice(0, pos)
+      where = `第 ${head.split('\n').length} 行 第 ${pos - head.lastIndexOf('\n')} 列`
+    }
+    return { ok: false, msg: e.message, where }
+  }
+}
+
+function run() {
+  const src = $('#json').value
+  const r = parseJson(src)
+  $('#jstat').textContent = `${src.length} 字符 · ${src.split('\n').length} 行`
+  $('#jerr').style.display = r.ok ? 'none' : 'flex'
+  if (!r.ok) {
+    $('#jerr').innerHTML = `<div class="band err" style="flex:1"><b>JSON 解析失败</b> ${esc(r.where)}<br>
+      <span class="mono" style="font-size:12px">${esc(r.msg)}</span></div>`
+    $('#out').innerHTML = ''
+    $('#cnt').textContent = 'JSON 不合法'
+    $('#paths').innerHTML = ''
+    return
+  }
+
+  const path = $('#expr').value.trim()
+  $('#exprWrap').classList.remove('bad')
+  $('#perr').innerHTML = ''
+  if (!path) {
+    $('#out').innerHTML = jsonHi(JSON.stringify(r.v, null, 2))
+    $('#cnt').textContent = '没写表达式 · 显示整个 JSON'
+    $('#paths').innerHTML = ''
+    return
+  }
+
+  let res
+  try { res = query(r.v, path) }
+  catch (e) {
+    $('#exprWrap').classList.add('bad')
+    $('#perr').innerHTML = `<div class="band err"><b>表达式有问题</b> ${esc(e.message)}</div>`
+    $('#cnt').textContent = '表达式有问题'
+    return
+  }
+
+  $('#cnt').textContent = `${res.length} 条`
+  const vals = res.map(x => x.v)
+  // 单值就直接给那个值，不用 [] 包一层 —— 拿去用的时候还得手动剥
+  const payload = res.length === 1 ? vals[0] : vals
+  const text = JSON.stringify(payload, null, 2) ?? 'undefined'
+  $('#out').innerHTML = res.length ? jsonHi(text) : '<span class="hint">没有命中任何节点</span>'
+  $('#out').dataset.raw = text
+
+  $('#paths').innerHTML = res.length ? `<table class="tbl">
+    <thead><tr><th style="width:44px">#</th><th style="width:44%">路径</th><th>值</th></tr></thead>
+    <tbody>${res.map((x, i) => `<tr><td class="num">${i + 1}</td>
+      <td class="mono acc">${esc(x.p)}</td>
+      <td class="mono">${esc(isObj(x.v) ? JSON.stringify(x.v) : String(x.v))}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="empty">没有命中任何节点</div>'
+
+  $('#out').style.display = VIEW === 'json' ? '' : 'none'
+  $('#paths').style.display = VIEW === 'path' ? '' : 'none'
+}
+
+$('#hints').innerHTML = HINTS.map(([e, d], i) =>
+  `<div class="hint-row" data-i="${i}"><code>${esc(e)}</code><div class="spacer" style="flex:1"></div><span class="ds">${d}</span></div>`).join('')
+$('#hints').querySelectorAll('.hint-row').forEach(el => {
+  el.onclick = () => {
+    $('#expr').value = HINTS[+el.dataset.i][0]
+    $('#hints').querySelectorAll('.hint-row').forEach(x => x.classList.toggle('on', x === el))
+    run()
+  }
+})
+
+$('#expr').oninput = () => {
+  $('#hints').querySelectorAll('.hint-row').forEach(x =>
+    x.classList.toggle('on', HINTS[+x.dataset.i][0] === $('#expr').value.trim()))
+  run()
+}
+let timer
+$('#json').oninput = () => { clearTimeout(timer); timer = setTimeout(run, 140) }
+
+/* 粘贴时自动格式化。只在粘贴这一下做，不在每次输入时做 ——
+   边打边重排会把光标弹走，那比多点一个「格式化」按钮更烦人。 */
+$('#json').addEventListener('paste', e => {
+  const txt = e.clipboardData?.getData('text')
+  if (!txt) return
+  e.preventDefault()
+  const el = $('#json')
+  const merged = el.value.slice(0, el.selectionStart) + txt + el.value.slice(el.selectionEnd)
+  const r = parseJson(merged)
+  el.value = r.ok ? JSON.stringify(r.v, null, 2) : merged
+  run()
+})
+$('#min').onclick = () => {
+  const r = parseJson($('#json').value)
+  if (!r.ok) return
+  const one = JSON.stringify(r.v)
+  $('#min').textContent = one === $('#json').value ? '展开' : '压缩成一行'
+  $('#json').value = one === $('#json').value ? JSON.stringify(r.v, null, 2) : one
+  run()
+}
+$('#view').querySelectorAll('button').forEach(b => {
+  b.onclick = () => {
+    VIEW = b.dataset.v
+    $('#view').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b))
+    run()
+  }
+})
+$('#cp').onclick = () => copy($('#out').dataset.raw || '', $('#cp'))
+
+$('#json').value = JSON.stringify(SAMPLE, null, 2)
+$('#expr').value = HINTS[0][0]
+$('#hints').querySelector('[data-i="0"]').classList.add('on')
+run()
+</script>
+</body>
+</html>

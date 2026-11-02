@@ -1,0 +1,29 @@
+[[permission]]
+identifier = "allow-oracle"
+description = "连用户 Oracle：拉字典 + 只读查询 + 勾选删改 + 生成页执行 + 编辑表结构增量 DDL。不走 plugin-sql。"
+commands.allow = ["oracle_connect", "oracle_columns", "oracle_disconnect", "oracle_query", "oracle_delete_rows", "oracle_update_rows", "oracle_insert_rows", "oracle_exec_sql", "oracle_exec_ddl"]
+
+[[permission]]
+identifier = "allow-mysql"
+description = "连用户 MySQL：拉字典 + 只读查询 + 勾选删改 + 生成页执行 + 编辑表结构增量 DDL。不走 plugin-sql。"
+commands.allow = ["mysql_connect", "mysql_columns", "mysql_disconnect", "mysql_query", "mysql_delete_rows", "mysql_update_rows", "mysql_insert_rows", "mysql_exec_sql", "mysql_exec_ddl"]
+
+[[permission]]
+identifier = "allow-cred"
+description = "读写系统凭据里的连接密码。不进 cache.db。生产连接前端不准 set。"
+commands.allow = ["cred_get", "cred_set", "cred_delete"]
+
+[[permission]]
+identifier = "allow-postgres"
+description = "连用户 PostgreSQL：拉字典 + 只读查询 + 勾选删改 + 生成页执行 + 编辑表结构增量 DDL。不走 plugin-sql。"
+commands.allow = ["postgres_connect", "postgres_columns", "postgres_disconnect", "postgres_query", "postgres_delete_rows", "postgres_update_rows", "postgres_insert_rows", "postgres_exec_sql", "postgres_exec_ddl"]
+
+[[permission]]
+identifier = "allow-sqlite"
+description = "连用户本机 SQLite 文件：拉字典 + 索引元数据 + 只读查询 + 勾选删改 + 生成页执行 + 编辑表结构增量 DDL。不走 plugin-sql（cache.db）。"
+commands.allow = ["sqlite_connect", "sqlite_columns", "sqlite_indexes", "sqlite_disconnect", "sqlite_query", "sqlite_delete_rows", "sqlite_update_rows", "sqlite_insert_rows", "sqlite_exec_sql", "sqlite_exec_ddl"]
+
+[[permission]]
+identifier = "allow-redis"
+description = "连用户 Redis（单机 / 哨兵 / 集群，可走跳板机 ssh 转发）：SCAN 看键 + 执行命令 + 按前缀批量删。清库/KEYS/阻塞命令在 Rust 侧一律拦，生产连接写命令需先临时放开。"
+commands.allow = ["redis_connect", "redis_disconnect", "redis_select", "redis_dbs", "redis_set_writable", "redis_scan", "redis_exec", "redis_delete_matching"]

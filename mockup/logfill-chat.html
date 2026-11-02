@@ -1,0 +1,651 @@
+﻿<!doctype html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>日志转 SQL · 码上 CodeNow 原型</title>
+<!--
+  静态原型，不参与 vite 构建（不在 src/ 下）。
+
+  这一版把外观整个搬到了共享的 _theme.css / _shell.js 上：左栏导航、5 套整体样式、
+  背景层、卡片/标签/表格全部跟其他 6 个页面同一份实现。原来这页自己内联了一套 CSS
+  并且带一个「视觉浓度 强/弱」开关 —— 那个开关只有两档、还漏了几处写死的青色，
+  已经换成右上角（或左栏底部、数字键 1–5）的 5 套主题。
+
+  数据仍是写死的 5 个样例，但方言渲染、参数改值、SQL 重算是真算的（mirror 了
+  lib/sqlgen/logFill.ts 的规则）。唯一不真的地方：没接 parseLog，只有这 5 段能识别。
+-->
+<link rel="stylesheet" href="_theme.css">
+<style>
+  /* 只写这一页特有的东西：会话条、对话流、气泡、输入坞、说明抽屉。
+     其余（卡片、标签、表格、代码块、按钮、折叠块）一律用 _theme.css 里的组件。 */
+
+  /* 会话条：原来在左栏，左栏现在归导航了。横一条比竖一列更省地方，也不抢导航的位置 */
+  .histbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 20px;
+    border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--panel2) 40%, transparent);
+    overflow-x: auto; scrollbar-width: thin }
+  .histbar .lbl { flex: none }
+
+  #flow .flow-in { max-width: 1020px; margin: 0 auto; padding: 24px 22px 26px }
+
+  /* 空状态 */
+  .hero { padding: 40px 0 6px; text-align: center }
+  .hero .eye { font: 11.5px/1 var(--mono); letter-spacing: 2.4px; color: var(--acc);
+    text-transform: var(--label-tf); margin-bottom: 13px; opacity: .9 }
+  .hero h1 { margin: 0 0 12px; font-size: 32px; letter-spacing: -.4px; font-weight: 650;
+    background: linear-gradient(96deg, var(--txt) 6%, var(--acc) 50%, var(--violet) 96%);
+    -webkit-background-clip: text; background-clip: text; color: transparent }
+  .hero p { margin: 0 auto; max-width: 600px; color: var(--dim); font-size: 15px }
+  .hero .chips { justify-content: center; margin-top: 24px }
+
+  /* 用户气泡 */
+  .turn { margin-bottom: 20px }
+  .me { display: flex; justify-content: flex-end }
+  .me .bub { max-width: 78%; border: 1px solid var(--line2); backdrop-filter: var(--blur);
+    border-radius: var(--r) var(--r) 4px var(--r); padding: 11px 14px;
+    background: color-mix(in srgb, var(--info) 13%, var(--panel)) }
+  .me .lbl { margin-bottom: 7px; text-align: right }
+  .me pre { margin: 0; font: 12.5px/1.7 var(--mono); color: var(--dim); white-space: pre-wrap;
+    word-break: break-all; max-height: 82px; overflow: hidden; transition: max-height .22s }
+  .me pre.open { max-height: 640px; overflow: auto }
+  .me .more { margin-top: 7px; font: 11.5px/1 var(--mono); color: var(--acc); cursor: pointer;
+    background: none; border: 0; padding: 0; letter-spacing: .4px }
+  .me .more:hover { text-decoration: underline }
+
+  /* 一张卡里的多条语句 */
+  .stmt + .stmt { margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--line) }
+  .stmt-h { display: flex; align-items: center; gap: 8px; margin-bottom: 9px }
+  .stmt-h b { font: 12px/1 var(--mono); letter-spacing: .8px; color: var(--dim); font-weight: 400 }
+  .tx { font-size: 14.5px; color: var(--dim) }
+  .tx b { color: var(--txt) }
+  .lit { font: 12.5px/1.5 var(--mono); color: var(--s); word-break: break-all }
+  .lit.uc { color: var(--warn) }
+  .tbl tr.bad .lit { color: var(--bad) }
+
+  /* 打字机光标。名字不能叫 .caret —— 那个是折叠块的三角，_theme.css 里已经占了 */
+  .cur { display: inline-block; width: 8px; height: 15px; background: var(--acc);
+    vertical-align: -3px; animation: bl .85s steps(1) infinite; box-shadow: var(--acc-glow) }
+  @keyframes bl { 50% { opacity: 0 } }
+
+  /* 输入坞 */
+  .dock { flex: none; padding: 0 22px 18px; background: linear-gradient(180deg, transparent, var(--bg) 34%) }
+  .dock-in { max-width: 1020px; margin: 0 auto }
+  .comp { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel);
+    backdrop-filter: var(--blur); transition: .18s; overflow: hidden }
+  .comp:focus-within { border-color: var(--line2);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 11%, transparent), var(--glow) }
+  .comp textarea { width: 100%; min-height: 60px; max-height: 200px; resize: none; background: none;
+    border: 0; outline: none; color: var(--txt); font: 13.5px/1.7 var(--mono); padding: 13px 15px 4px; display: block }
+  .comp textarea::placeholder { color: var(--dimmer) }
+  .comp-bar { display: flex; align-items: center; gap: 8px; padding: 6px 11px 9px }
+  .comp-bar .tip { flex: 1; font: 11.5px/1.4 var(--mono); color: var(--dimmer) }
+
+  /* 设计说明抽屉 */
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(660px, 94vw); z-index: 20;
+    background: var(--bg2); backdrop-filter: blur(16px); border-left: 1px solid var(--line2);
+    transform: translateX(100%); transition: transform .26s cubic-bezier(.4, 0, .2, 1);
+    overflow: auto; box-shadow: -30px 0 70px -30px rgba(0, 0, 0, .9) }
+  .drawer.open { transform: none }
+  .drawer .dh { position: sticky; top: 0; z-index: 2; background: var(--bg2); padding: 15px 22px;
+    border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px }
+  .drawer .dh b { flex: 1; font-size: 15.5px }
+  .drawer .dc { padding: 18px 22px 40px }
+  .drawer h5 { margin: 24px 0 9px; font: 11.5px/1 var(--mono); letter-spacing: var(--label-ls);
+    color: var(--acc); text-transform: var(--label-tf); font-weight: 400 }
+  .drawer h5:first-child { margin-top: 0 }
+  .drawer p, .drawer ul { margin: 0 0 11px; font-size: 14.5px; color: var(--dim) }
+  .drawer ul { padding-left: 19px }
+  .drawer li { margin-bottom: 8px }
+  .drawer b { color: var(--txt) }
+  .drawer code { font: 12.5px/1 var(--mono); color: var(--acc); padding: 1px 5px; border-radius: 4px;
+    border: 1px solid var(--line); background: color-mix(in srgb, var(--acc) 8%, transparent) }
+  .drawer .q { border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent);
+    padding: 11px 14px; border-radius: 0 var(--r2) var(--r2) 0; font-size: 14px;
+    color: color-mix(in srgb, var(--warn) 45%, var(--txt)); margin: 12px 0 }
+  .scrim { position: fixed; inset: 0; z-index: 19; background: rgba(2, 4, 10, .6);
+    opacity: 0; pointer-events: none; transition: .26s }
+  .scrim.on { opacity: 1; pointer-events: auto }
+</style>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="logfill"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">🧩 日志转 SQL</div>
+        <div class="sub">本地解析 · 无网络 · 结果可复现</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">粘贴即识别 · 无「解析」按钮</span>
+      <div class="seg" id="seg"></div>
+      <button class="ghost" id="notesBtn">设计说明</button>
+      <button class="ghost" id="clearBtn">清空</button>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="histbar" id="hist" style="display:none"></div>
+
+    <div class="pane" id="flow"><div class="flow-in" id="flowIn"></div></div>
+
+    <div class="dock"><div class="dock-in">
+      <div class="comp">
+        <textarea id="ta" spellcheck="false"
+          placeholder="把日志粘进来（Ctrl+V 直接出结果，不用点发送）&#10;也可以打字追问：换成 Oracle / 第 5 个参数改成 null / 只要第 2 条"></textarea>
+        <div class="comp-bar">
+          <div class="tip">粘贴即识别 · Enter 发送 · Shift+Enter 换行</div>
+          <button class="primary" id="send" disabled>发送</button>
+        </div>
+      </div>
+    </div></div>
+  </main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <div class="dh"><b>这版原型做了哪些决定</b><button class="ghost" id="closeNotes">关闭</button></div>
+  <div class="dc">
+    <div class="q"><b>先说最要紧的一条：这里没有 LLM，也不该有。</b><br>
+      这是本地离线工具，同一段日志进去必须每次出一模一样的 SQL——这是它值得被信任的全部理由。
+      接了大模型就成了「大概率对」，而这个功能错了是<b>不报错的</b>：参数错位的语句照样能跑，只是数据是错的。
+      所以我做的是<b>对话式的交互范式 + 科技感的视觉</b>，解析仍然是 <code>lib/sqlgen/logFill.ts</code> 那套确定性规则。
+      如果你要的是真接 API 的那种，那是另一个方向，你说一声。</div>
+
+    <h5>为什么聊天范式在这个功能上是真的更好</h5>
+    <p>不是为了跟风。现在那张<b>参数对照表在弹窗里，点掉就再也看不见了</b>——而它是这个功能可信度的唯一来源。
+      改成对话流之后它变成回答卡片的一部分，永久留在历史里，随时能翻回去核对。这修掉的是一个真实缺陷。</p>
+    <ul>
+      <li><b>历史不再丢。</b>现在贴第二段日志，第一段的结果就没了。对话流天然保留，顶部会话条还能跳回去。</li>
+      <li><b>「改一下」有地方说了。</b>换方言、改某个参数、批量里只要第 2 条——现在得回去改输入框重新识别。</li>
+      <li><b>失败也是一条消息。</b>认不出来的时候给一张卡片说清楚「我认得哪几种」，而不是弹一个转瞬即逝的 toast。</li>
+    </ul>
+
+    <h5>保留下来的东西（一个都没丢）</h5>
+    <ul>
+      <li><b>粘贴即识别</b>，不给「解析」按钮。输入只有一种来源，多一次点击没意义。</li>
+      <li><b>参数对照表四列不变</b>：第几个 <code>?</code> / 日志里的原样文本 / 值（可改） / 进 SQL 的样子。</li>
+      <li><b>值可改，改完 SQL 实时重算</b>（这里是真算的，你可以试）。</li>
+      <li><b>个数对不上照样出结果，但整卡标红</b>，缺的那几行单独标出来。宁可让人当场看见。</li>
+      <li>5 种日志格式、4 种方言（Oracle 打头）、批量多条各自可复制。</li>
+    </ul>
+
+    <h5>改掉的东西</h5>
+    <ul>
+      <li><b>确认弹窗没了。</b>它的职责（核对）由常驻的对照表接管，而且比弹窗更持久。少一次「确认生成」的点击。</li>
+      <li><b>左右分栏没了。</b>日志作为「你说的话」折叠在上面（默认只露 3 行，点开看全），SQL 是「回答」。
+        纵向阅读比左右对照更符合「贴进去→拿结果」的实际动作。</li>
+      <li><b>方言从卡片里提到顶栏</b>，因为它是全局的，且改了要影响历史里所有卡片的重算。</li>
+      <li><b>「视觉浓度 强/弱」那个开关没了。</b>见下条。</li>
+    </ul>
+
+    <h5>视觉：从两档浓度换成 5 套整体样式</h5>
+    <p>上一版左下角是个「强 / 弱」开关，两档差别小、还漏了几处写死的青色，切过去有一块是花的，
+      等于没得选。现在换成<b>右上角（或左栏底部、数字键 <kbd>1</kbd>–<kbd>5</kbd>）5 套完整方案</b>，
+      不只是配色变，圆角、字体、发光、背景层、标签大小写全都跟着换：</p>
+    <ul>
+      <li><b>深空霓虹</b>　深蓝黑 + 霓虹青 + 网格 + 扫描线 + 毛玻璃 + HUD 角标（就是原来的「强」）</li>
+      <li><b>石墨</b>　　　中性深灰 + 钢蓝，平面、无发光、小圆角，最克制的一套</li>
+      <li><b>终端磷光</b>　纯黑 + 磷绿，<b>全站等宽字体</b>、直角、CRT 扫描线</li>
+      <li><b>蓝图</b>　　　墨蓝 + 密网格 + 琥珀描线，细线直角，工程图纸感</li>
+      <li><b>霓虹紫</b>　　紫洋红渐变 + 强发光 + 大圆角</li>
+    </ul>
+    <p>样式只有一份实现（<code>mockup/_theme.css</code>），6 个功能页共用，所以同一个组件在每页长得一样，
+      挑样式才挑得准。组件规则一律只读 CSS 变量——写死一处颜色，5 套里就有 4 套是坏的，
+      而且只有切过去才看得见。左栏「样式总览」那页能 5 套并排看。</p>
+
+    <h5>「打字追问」怎么可信</h5>
+    <p>固定意图表，不猜。认得的就做，认不得就<b>明说认不得并列出词表</b>——绝不给一个似是而非的结果。
+      当前词表：<code>换成 Oracle/MySQL/PG</code>、<code>第 N 个参数改成 X</code>、<code>只要第 N 条</code>、<code>复制</code>。
+      试试打「导出成 Excel」看它怎么拒绝。</p>
+
+    <h5>还没定、想听你意见的</h5>
+    <ul>
+      <li><b>5 套里挑哪一套</b>（或者说哪一套的哪部分）。挑定了我把其余 4 套删掉，只留一份。</li>
+      <li><b>这套对话流要不要推广到别的 Tab</b>：其余 5 个页面这一轮做成了面板式。SQL 生成器配置项多，
+        聊天流未必比「左边配置右边出结果」好。我倾向<b>只有日志转 SQL 和未来的自然语言查询用对话流</b>。</li>
+      <li><b>是否保留「确认」这一步</b>：我这版取消了。如果你觉得少了一道闸不放心，
+        可以改成「生成即出，但顶部有一条未核对的提示条，点『我核对过了』才消失」。</li>
+    </ul>
+  </div>
+</aside>
+
+<script src="_shell.js"></script>
+<script>
+'use strict';
+const { esc, sqlHi, copy } = UI;
+const $ = s => document.querySelector(s);
+/* esc 不管引号，而这些值要塞进 value="..."，用户随手打一个双引号就能把属性截断 */
+const att = s => esc(s).replace(/"/g, '&quot;');
+
+/* ============ 方言规则（mirror lib/sqlgen/dialect.ts + logFill.ts） ============ */
+/* 顶栏方言按钮就按这里的声明顺序排（Object.entries 保序），Oracle 打头 —— 粘进来的日志
+   绝大多数来自 Oracle 库，它是最常切的那一个。改顺序改这里就够。 */
+const DIA = {
+  oracle:     { label:'Oracle', bool:t=>t?'1':'0',
+                date:s=>`TO_DATE('${s}','YYYY-MM-DD HH24:MI:SS')` },
+  mysql:      { label:'MySQL',  bool:t=>t?'TRUE':'FALSE', date:s=>`'${s}'` },
+  postgresql: { label:'PG',     bool:t=>t?'TRUE':'FALSE', date:s=>`'${s}'` },
+};
+
+const STR = ['String','Character','Char','Clob','NClob','UUID','VARCHAR','NVARCHAR','VARCHAR2','TEXT','CHAR'];
+const NUM = ['Integer','Int','Long','Short','Byte','Double','Float','BigDecimal','BigInteger','Number','BIGINT','DECIMAL','NUMERIC'];
+const BOO = ['Boolean','Bool','BOOLEAN','BIT'];
+const DAT = ['Timestamp','Date','Time','LocalDateTime','LocalDate','Instant','TIMESTAMP','DATE'];
+
+function klass(p){
+  if (p.value === 'null' && p.type === undefined) return 'null';
+  if (!p.type) return 'unknown';
+  const t = p.type;
+  if (STR.some(x=>t.endsWith(x))) return 'string';
+  if (NUM.some(x=>t.endsWith(x))) return 'number';
+  if (BOO.some(x=>t.endsWith(x))) return 'bool';
+  if (DAT.some(x=>t.endsWith(x))) return 'date';
+  return 'unknown';
+}
+/** 毫秒和 T 分隔要先规整掉，否则 Oracle 的 TO_DATE 格式串对不上 */
+const normDate = s => s.trim().replace('T',' ').replace(/[.,]\d{1,6}$/,'');
+const q = s => `'${s.replace(/'/g,"''")}'`;
+
+/** 返回 {literal, uncertain} —— uncertain 会在表里挂一个 ⚠️ */
+function renderParam(p, d){
+  const c = klass(p), D = DIA[d];
+  if (c==='null') return {literal:'NULL'};
+  if (c==='number') return /^-?\d+(\.\d+)?$/.test(p.value)
+      ? {literal:p.value} : {literal:q(p.value), uncertain:true};
+  if (c==='bool')  return {literal:D.bool(/^(true|1|t|y)$/i.test(p.value))};
+  if (c==='date')  return {literal:D.date(normDate(p.value))};
+  if (c==='string')return {literal:q(p.value)};
+  return {literal:q(p.value), uncertain:true};
+}
+/** 只替换裸 ?，字符串字面量里的不算 */
+function fill(tpl, lits){
+  let out='', qt=false, i=0;
+  for (const ch of tpl){
+    if (ch==="'") qt=!qt;
+    if (ch==='?' && !qt){ out += (i<lits.length? lits[i] : '?'); i++; continue; }
+    out += ch;
+  }
+  return out;
+}
+
+/* ============ 样例（写死；真做出来这里换成 parseLog） ============ */
+const P = (raw, value, type) => ({raw, value, type});
+const SAMPLES = {
+  mybatis: {
+    title:'MyBatis 单条 INSERT', sub:'7 个参数 · 含逗号/单引号/空串/NULL',
+    log:`[2026-08-20 06:36:13.080]DEBUG [asyncTaskExecutor-1][c.r.s.b.a.t.dao.PurchaseOrderMapper.insert:159]-> ==>  Preparing: INSERT INTO purchase_order (order_no, city, amount, remark, create_time, err_msg, del_flag) VALUES (?, ?, ?, ?, ?, ?, ?)
+[2026-08-20 06:36:13.081]DEBUG [asyncTaskExecutor-1][c.r.s.b.a.t.dao.PurchaseOrderMapper.insert:159]-> ==> Parameters: CT20260820000123(String), 宁波市, 鄞州区(String), 388.00(BigDecimal), O'Brien 备注(String), 2026-08-20 06:36:13.081(Timestamp), (String), null
+[2026-08-20 06:36:13.095]DEBUG [asyncTaskExecutor-1][c.r.s.b.a.t.dao.PurchaseOrderMapper.insert:159]-> <==    Updates: 1`,
+    fmt:'MyBatis 日志', notes:['已剥掉 3 行日志头','<== Updates 行不算参数'],
+    stmts:[{ tpl:'INSERT INTO purchase_order (order_no, city, amount, remark, create_time, err_msg, del_flag)\nVALUES (?, ?, ?, ?, ?, ?, ?)',
+      ph:7, params:[
+        P('CT20260820000123(String)','CT20260820000123','String'),
+        P('宁波市, 鄞州区(String)','宁波市, 鄞州区','String'),
+        P('388.00(BigDecimal)','388.00','BigDecimal'),
+        P("O'Brien 备注(String)","O'Brien 备注",'String'),
+        P('2026-08-20 06:36:13.081(Timestamp)','2026-08-20 06:36:13.081','Timestamp'),
+        P('(String)','','String'),
+        P('null','null',undefined),
+      ]}],
+  },
+  batch: {
+    title:'MyBatis 批量 3 条', sub:'一条 Preparing + 三条 Parameters',
+    log:`==>  Preparing: INSERT INTO order_item (order_no, sku, qty) VALUES (?, ?, ?)
+==> Parameters: CT20260820000123(String), SKU-A-001(String), 2(Integer)
+==> Parameters: CT20260820000123(String), SKU-B-114(String), 1(Integer)
+==> Parameters: CT20260820000123(String), SKU-C-207(String), 12(Integer)`,
+    fmt:'MyBatis 日志', notes:['模板复用了 3 次'],
+    stmts:[['SKU-A-001','2'],['SKU-B-114','1'],['SKU-C-207','12']].map(([sku,qty])=>({
+      tpl:'INSERT INTO order_item (order_no, sku, qty) VALUES (?, ?, ?)', ph:3,
+      params:[P('CT20260820000123(String)','CT20260820000123','String'),
+              P(sku+'(String)',sku,'String'), P(qty+'(Integer)',qty,'Integer')],
+    })),
+  },
+  hibernate: {
+    title:'Hibernate 查询', sub:'布尔和时间戳跨方言差异最大',
+    log:`Hibernate: select u.id, u.username, u.is_vip from user u where u.username = ? and u.is_vip = ? and u.create_time > ?
+TRACE o.h.type.descriptor.sql.BasicBinder - binding parameter [1] as [VARCHAR] - [zhangsan]
+TRACE o.h.type.descriptor.sql.BasicBinder - binding parameter [2] as [BOOLEAN] - [true]
+TRACE o.h.type.descriptor.sql.BasicBinder - binding parameter [3] as [TIMESTAMP] - [2026-08-01T00:00:00]`,
+    fmt:'Hibernate 日志', notes:['切到 Oracle 看 TRUE 会变成 1'],
+    stmts:[{ tpl:'select u.id, u.username, u.is_vip\nfrom user u\nwhere u.username = ? and u.is_vip = ? and u.create_time > ?',
+      ph:3, params:[P('[1] as [VARCHAR] - [zhangsan]','zhangsan','VARCHAR'),
+        P('[2] as [BOOLEAN] - [true]','true','BOOLEAN'),
+        P('[3] as [TIMESTAMP] - [2026-08-01T00:00:00]','2026-08-01T00:00:00','TIMESTAMP')]}],
+  },
+  noisy: {
+    title:'日志头混进来的那种', sub:'bug.txt bug1 的原始现场',
+    log:`[2026-08-20 06:36:13.080]DEBUG [asyncTaskExecutor-1][c.r.s.b.a.t.dao.PurchaseInterfaceLogMapper.insert:159]-> INSERT INTO purchase_log (order_no, city, amount) VALUES (?, ?, ?)
+[2026-08-20 06:36:13.080]DEBUG [asyncTaskExecutor-1][c.r.s.b.a.t.dao.PurchaseInterfaceLogMapper.insert:159]-> ==> Parameters: CT20260820000123(String), 宁波(String), 388.00(BigDecimal)
+[2026-08-20 06:36:13.090]DEBUG [asyncTaskExecutor-1][c.r.s.b.a.t.s.i.PayServiceImpl.searchOrder:88]-> 查询完成`,
+    fmt:'占位符 SQL + 参数', notes:['SQL 行丢了 Preparing:，已按关键字识别','末行无关日志已挡掉，没变成第 4 个参数'],
+    stmts:[{ tpl:'INSERT INTO purchase_log (order_no, city, amount) VALUES (?, ?, ?)', ph:3,
+      params:[P('CT20260820000123(String)','CT20260820000123','String'),
+        P('宁波(String)','宁波','String'), P('388.00(BigDecimal)','388.00','BigDecimal')]}],
+  },
+  mismatch: {
+    title:'个数对不上', sub:'6 个 ? / 4 个参数',
+    log:`==>  Preparing: UPDATE user SET username = ?, nickname = ?, balance = ?, remark = ?, update_time = ? WHERE id = ?
+==> Parameters: zhangsan(String), 张三(String), 100.50(BigDecimal), 备注(String)`,
+    fmt:'MyBatis 日志', notes:[],
+    stmts:[{ tpl:'UPDATE user SET username = ?, nickname = ?, balance = ?, remark = ?, update_time = ?\nWHERE id = ?',
+      ph:6, params:[P('zhangsan(String)','zhangsan','String'), P('张三(String)','张三','String'),
+        P('100.50(BigDecimal)','100.50','BigDecimal'), P('备注(String)','备注','String')]}],
+  },
+};
+
+/* ============ 状态 ============ */
+/* collapsed 存「哪几张对照表被手动收起了」。改一个参数值就会整块重渲染，
+   折叠状态写在 DOM 上会被冲掉 —— 收起来的表一敲字又自己弹开，比不能收还烦。 */
+const S = { dialect:'mysql', turns:[], seq:0, collapsed:new Set() };
+
+function computed(t){
+  return t.sample.stmts.map(st=>{
+    const vals = st.vals;
+    const rendered = st.params.map((p,i)=>renderParam({...p, value: vals[i]}, S.dialect));
+    const bad = st.ph !== st.params.length;
+    return { st, rendered, bad,
+      sql: fill(st.tpl, rendered.map(r=>r.literal)),
+      err: bad ? `占位符 ${st.ph} 个，参数只有 ${st.params.length} 个——差 ${Math.abs(st.ph-st.params.length)} 个` : null };
+  });
+}
+
+/* ============ 渲染 ============ */
+function paramTable(t, si, c){
+  const key = `${t.id}-${si}`, open = !S.collapsed.has(key);
+  const rows = [];
+  const n = Math.max(c.st.ph, c.st.params.length);
+  for (let i=0;i<n;i++){
+    const p = c.st.params[i], r = c.rendered[i];
+    if (!p){ rows.push(`<tr class="bad"><td class="num">${i+1}</td>
+      <td class="mono muted">— 没有对应参数 —</td><td></td>
+      <td class="lit">?（原样留着，别执行）</td></tr>`); continue; }
+    rows.push(`<tr><td class="num">${i+1}</td>
+      <td class="mono">${esc(p.raw)}</td>
+      <td><input class="fld" value="${att(c.st.vals[i])}" data-t="${t.id}" data-s="${si}" data-i="${i}"></td>
+      <td class="lit${r.uncertain?' uc':''}">${esc(r.literal)}${r.uncertain?' <span class="tag wr">⚠️ 类型没认出来</span>':''}</td></tr>`);
+  }
+  return `<div class="fold${open?' on':''}" style="margin-top:12px">
+    <div class="fold-h" data-fold="${key}">
+      <span class="caret">▸</span>
+      <span class="lbl acc">参数对照表</span>
+      <span class="hint">改「值」这一列，上面的 SQL 立刻跟着变</span>
+      <div class="spacer"></div>
+      <span class="auto">改完即重算</span>
+    </div>
+    <div class="fold-b" style="padding:0">
+      <table class="tbl"><thead><tr><th style="width:44px">#</th><th style="width:32%">日志里的参数</th>
+        <th style="width:26%">值（可改）</th><th>进 SQL 的样子</th></tr></thead>
+        <tbody>${rows.join('')}</tbody></table>
+    </div></div>`;
+}
+
+function cardHtml(t){
+  const cs = computed(t), anyBad = cs.some(c=>c.bad);
+  const s = t.sample;
+  const tags = [
+    `<span class="tag hi">${esc(s.fmt)}</span>`,
+    `<span class="tag">${cs.length} 条语句</span>`,
+    `<span class="tag">${cs.reduce((a,c)=>a+c.st.params.length,0)} 个参数</span>`,
+    `<span class="tag ${anyBad?'no':'ok'}">${anyBad?'✕ 个数对不上':'✓ 个数匹配'}</span>`,
+    `<span class="tag">${DIA[S.dialect].label}</span>`,
+    ...s.notes.map(n=>`<span class="tag">${esc(n)}</span>`),
+  ].join('');
+
+  const body = cs.map((c,si)=>`<div class="stmt">
+    ${cs.length>1?`<div class="stmt-h"><b>第 ${si+1} 条</b>
+      <span class="tag ${c.bad?'no':'ok'}">${c.st.ph} 个 ? / ${c.st.params.length} 个参数</span></div>`:''}
+    <div class="code">
+      <div class="code-bar"><span class="fn">filled${cs.length>1?'-'+(si+1):''}.sql</span>
+        <button class="mini" data-copy="${t.id}-${si}">复制</button></div>
+      <pre data-sql="${t.id}-${si}">${sqlHi(c.sql)}</pre>
+    </div>
+    ${c.err?`<div class="band err" style="margin-top:12px"><b>❌ ${esc(c.err)}</b>　这条别直接拿去执行，
+      先回去核对参数是怎么切分的——多半是某个值里带了逗号被切成两半。缺的位置在下表里标出来了。</div>`:''}
+    ${paramTable(t, si, c)}
+  </div>`).join('');
+
+  return `<div class="card${anyBad?' err':''}">
+    <i class="corner tl"></i><i class="corner br"></i>
+    <div class="chead"><span class="dot"></span><span class="who">解析结果</span>${tags}</div>
+    <div class="cbody">${body}</div>
+    <div class="acts">
+      <!-- 方言快捷按钮按 DIA 的声明顺序生成（Oracle → MySQL → PG），不手写列表；
+           顺手跳过当前方言 —— 已经是 MySQL 了还摆一个「换成 MySQL」，点下去什么也不变 -->
+      ${Object.entries(DIA).filter(([k])=>k!==S.dialect)
+        .map(([k,v])=>`<button class="mini" data-cmd="${k}">换成 ${v.label}</button>`).join('')}
+      <button class="mini" data-copy="${t.id}-all">复制全部纯 SQL</button>
+      <button class="mini" data-again="1">再贴一段</button>
+    </div></div>`;
+}
+
+const CHIPS = `<div class="chips">
+  <span class="chip" data-s="mybatis"><i>MYBATIS</i> 单条 INSERT</span>
+  <span class="chip" data-s="batch"><i>BATCH</i> 批量 3 条</span>
+  <span class="chip" data-s="hibernate"><i>HIBERNATE</i> 查询</span>
+  <span class="chip warn" data-s="noisy"><i>NOISE</i> 日志头混进来</span>
+  <span class="chip bad" data-s="mismatch"><i>ERROR</i> 个数对不上</span>
+</div>`;
+
+function replyHtml(t){
+  if (t.kind==='sample') return cardHtml(t);
+  if (t.kind==='ok') return `<div class="card"><i class="corner tl"></i><i class="corner br"></i>
+    <div class="chead"><span class="dot"></span><span class="who">已执行</span>
+      <span class="tag ok">✓ ${esc(t.msg)}</span></div>
+    <div class="cbody"><div class="tx">${esc(t.detail)}</div></div></div>`;
+  /* 原型没接 parseLog，所以真日志粘进来只能说清楚这一点，不假装识别 */
+  if (t.kind==='nosample') return `<div class="card err"><i class="corner tl"></i><i class="corner br"></i>
+    <div class="chead"><span class="dot"></span><span class="who">原型限制</span>
+      <span class="tag wr">这里没接解析引擎</span></div>
+    <div class="cbody stack">
+      <div class="tx">这个静态页只内置了下面 5 段样例日志，<b>没接 <code class="mono acc">lib/sqlgen/logFill.ts</code></b>，
+        所以你自己的日志贴进来它认不出来——真做出来这一步走的是已经有 47 条用例钉着的那个解析器。
+        先点样例看交互和视觉，那才是要你确认的东西。</div>
+      ${CHIPS}</div></div>`;
+  // 认不出来
+  return `<div class="card err"><i class="corner tl"></i><i class="corner br"></i>
+    <div class="chead"><span class="dot"></span><span class="who">认不出来</span>
+      <span class="tag no">未匹配任何意图</span></div>
+    <div class="cbody stack">
+      <div class="tx">这里<b>没有大模型</b>，不会猜你的意思——猜错了生成一条能跑但数据是错的 SQL，
+        比直接说不会更糟。我认得的就这几条：</div>
+      <div class="row tight">
+        <span class="tag hi">换成 Oracle / MySQL / PG</span>
+        <span class="tag hi">第 N 个参数改成 X</span>
+        <span class="tag hi">只要第 N 条</span>
+        <span class="tag hi">复制</span>
+      </div>
+      <div class="hint">直接粘一段日志当然也行——那才是主路径。</div>
+    </div></div>`;
+}
+
+function turnHtml(t){
+  const lines = (t.text||'').split('\n').length;
+  return `<div class="turn" id="turn-${t.id}">
+    ${t.text?`<div class="me"><div class="bub">
+      <div class="lbl">粘贴的日志 · ${lines} 行</div>
+      <pre id="pre-${t.id}">${esc(t.text)}</pre>
+      ${lines>3?`<button class="more" data-open="${t.id}">展开全部 ${lines} 行 ▾</button>`:''}
+    </div></div>`:''}
+    <div style="margin-top:11px">${replyHtml(t)}</div>
+  </div>`;
+}
+
+const HERO = `<div class="hero">
+  <div class="eye">◈ 本地解析引擎 · 离线 · 可复现</div>
+  <h1>把日志贴进来，拿走能跑的 SQL</h1>
+  <p>线上日志里是 <kbd>VALUES (?, ?)</kbd> 加一行参数，十几个 <kbd>?</kbd> 手工填回去极容易错位——
+     <b style="color:var(--txt)">而错位的语句照样能跑，只是数据是错的</b>。所以这里每一步都摊开给你核对。</p>
+  ${CHIPS}</div>`;
+
+function render(){
+  $('#flowIn').innerHTML = S.turns.length ? S.turns.map(turnHtml).join('') : HERO;
+
+  const done = S.turns.filter(t=>t.kind==='sample');
+  const lastId = done.slice(-1)[0]?.id;
+  $('#hist').style.display = done.length ? 'flex' : 'none';
+  $('#hist').innerHTML = done.length
+    ? '<span class="lbl">本次会话</span>' + done.map((t,i)=>
+        `<button class="mini${t.id===lastId?' on':''}" data-go="${t.id}">${i+1} · ${esc(t.sample.title)}</button>`).join('')
+    : '';
+
+  $('#seg').innerHTML = Object.entries(DIA).map(([k,v])=>
+    `<button data-d="${k}" class="${k===S.dialect?'on':''}">${v.label}</button>`).join('');
+  $('#flow').scrollTop = $('#flow').scrollHeight;
+}
+
+/* 打字机：只在最新那张卡上跑一次，快而短，够传达「在生成」就行 */
+function typewrite(t){
+  const cs = computed(t);
+  cs.forEach((c,si)=>{
+    const el = document.querySelector(`[data-sql="${t.id}-${si}"]`);
+    if (!el) return;
+    const full = c.sql; let i = 0;
+    el.innerHTML = '<span class="cur"></span>';
+    const step = () => {
+      i = Math.min(full.length, i + Math.max(3, Math.ceil(full.length/26)));
+      el.innerHTML = sqlHi(full.slice(0,i)) + (i<full.length?'<span class="cur"></span>':'');
+      if (i<full.length) requestAnimationFrame(()=>setTimeout(step, 14));
+    };
+    setTimeout(step, 90*si);
+  });
+}
+
+function push(sampleKey){
+  const src = SAMPLES[sampleKey];
+  const sample = { ...src, stmts: src.stmts.map(st=>({...st, vals: st.params.map(p=>p.value)})) };
+  const t = { id:++S.seq, kind:'sample', text:src.log, sample };
+  S.turns.push(t); render(); typewrite(t);
+}
+function pushMsg(text, kind, msg, detail){
+  S.turns.push({ id:++S.seq, kind, text, msg, detail }); render();
+}
+
+/* ============ 指令识别：固定词表，认不出就明说 ============ */
+function handle(text){
+  const q = text.trim(), low = q.toLowerCase();
+  const last = [...S.turns].reverse().find(t=>t.kind==='sample');
+
+  for (const [k,v] of Object.entries(DIA))
+    if (low.includes(k) || low.includes(v.label.toLowerCase())){
+      S.dialect = k;
+      pushMsg(q,'ok',`方言已切到 ${v.label}`,
+        `历史里所有卡片都按 ${v.label} 重算了——往上翻能看到 SQL 变了。`
+        + (k==='oracle'?'　注意 Oracle：时间走 TO_DATE，布尔是 1/0（23c 以前没有布尔字面量）。':''));
+      return;
+    }
+
+  const m = /第\s*(\d+)\s*个参数.*?(?:改成|换成|=)\s*(.+)$/.exec(q);
+  if (m && last){
+    const i = +m[1]-1, v = m[2].trim();
+    if (last.sample.stmts[0].vals[i] !== undefined){
+      last.sample.stmts[0].vals[i] = v==='null'?'null':v;
+      pushMsg(q,'ok',`第 ${m[1]} 个参数改成 ${v}`,'上面那张卡里的 SQL 和对照表都已重算。');
+      return;
+    }
+  }
+  const only = /只要第\s*(\d+)\s*条/.exec(q);
+  if (only && last && last.sample.stmts.length>1){
+    const i = +only[1]-1;
+    if (last.sample.stmts[i]){
+      last.sample.stmts = [last.sample.stmts[i]];
+      pushMsg(q,'ok',`只保留第 ${only[1]} 条`,'其余语句已从上面那张卡里移除。');
+      return;
+    }
+  }
+  if (/复制|copy/i.test(low) && last){
+    const cs = computed(last);
+    copy(cs.map(c=>c.sql).join(';\n\n')+';');
+    pushMsg(q,'ok','已复制到剪贴板',`${cs.length} 条语句，按当前方言（${DIA[S.dialect].label}）渲染。`);
+    return;
+  }
+  pushMsg(q,'bad');
+}
+
+/* ============ 事件 ============ */
+$('#flowIn').addEventListener('click', e=>{
+  const el = e.target.closest('[data-s],[data-open],[data-fold],[data-cmd],[data-again],[data-copy]');
+  if (!el) return;
+  if (el.dataset.s) return push(el.dataset.s);
+  if (el.dataset.open){
+    const pre = document.getElementById('pre-'+el.dataset.open);
+    pre.classList.toggle('open');
+    el.textContent = pre.classList.contains('open') ? '收起 ▴' : `展开全部 ${pre.textContent.split('\n').length} 行 ▾`;
+    return;
+  }
+  if (el.dataset.fold){
+    const key = el.dataset.fold;
+    S.collapsed.has(key) ? S.collapsed.delete(key) : S.collapsed.add(key);
+    el.parentElement.classList.toggle('on', !S.collapsed.has(key));
+    return;
+  }
+  if (el.dataset.cmd) return handle('换成 '+DIA[el.dataset.cmd].label);
+  if (el.dataset.again){ $('#ta').focus(); return; }
+  if (el.dataset.copy){
+    const [id, which] = el.dataset.copy.split('-');
+    const t = S.turns.find(x=>x.id === +id); if (!t) return;
+    const cs = computed(t);
+    copy(which==='all' ? cs.map(c=>c.sql).join(';\n\n')+';' : cs[+which].sql, el);
+    return;
+  }
+});
+
+/* 改参数值 → 实时重算（这是真算的，不是假动画） */
+$('#flowIn').addEventListener('input', e=>{
+  const el = e.target.closest('input[data-t]'); if (!el) return;
+  const t = S.turns.find(x=>x.id === +el.dataset.t); if (!t) return;
+  t.sample.stmts[+el.dataset.s].vals[+el.dataset.i] = el.value;
+  const pos = el.selectionStart;
+  const scroll = $('#flow').scrollTop;
+  render();
+  const again = document.querySelector(`input[data-t="${el.dataset.t}"][data-s="${el.dataset.s}"][data-i="${el.dataset.i}"]`);
+  if (again){ again.focus(); again.setSelectionRange(pos,pos); }
+  $('#flow').scrollTop = scroll;
+});
+
+$('#seg').addEventListener('click', e=>{
+  const b = e.target.closest('[data-d]'); if (!b) return;
+  S.dialect = b.dataset.d; render();
+});
+$('#hist').addEventListener('click', e=>{
+  const it = e.target.closest('[data-go]'); if (!it) return;
+  document.getElementById('turn-'+it.dataset.go)?.scrollIntoView({block:'center'});
+});
+$('#clearBtn').onclick = ()=>{ S.turns=[]; S.collapsed.clear(); render(); };
+$('#notesBtn').onclick = ()=>{ $('#drawer').classList.add('open'); $('#scrim').classList.add('on'); };
+const closeD = ()=>{ $('#drawer').classList.remove('open'); $('#scrim').classList.remove('on'); };
+$('#closeNotes').onclick = closeD; $('#scrim').onclick = closeD;
+
+const ta = $('#ta');
+ta.addEventListener('input', ()=>{
+  $('#send').disabled = !ta.value.trim();
+  ta.style.height='auto'; ta.style.height = Math.min(200, ta.scrollHeight)+'px';
+});
+/* 粘贴即识别：从 clipboardData 取，不等 onChange（value 那时还是旧的） */
+ta.addEventListener('paste', e=>{
+  const txt = e.clipboardData.getData('text');
+  if (!txt.trim()) return;
+  e.preventDefault();
+  const hit = Object.keys(SAMPLES).find(k=>SAMPLES[k].log.trim()===txt.trim());
+  if (hit){ push(hit); ta.value=''; }
+  else { pushMsg(txt,'nosample'); ta.value=''; }
+  ta.style.height='auto'; $('#send').disabled = true;
+});
+ta.addEventListener('keydown', e=>{
+  if (e.key==='Enter' && !e.shiftKey){ e.preventDefault(); $('#send').click(); }
+});
+$('#send').onclick = ()=>{
+  const v = ta.value.trim(); if (!v) return;
+  handle(v); ta.value=''; ta.style.height='auto'; $('#send').disabled = true;
+};
+
+/* 注意这里没有监听 themechange：颜色全走 CSS 变量，切主题不该触发任何业务重算。
+   重算一次会把打字机动画重跑、把光标从正在编辑的输入框里弹走。 */
+render();
+</script>
+</body>
+</html>

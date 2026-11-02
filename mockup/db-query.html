@@ -1,0 +1,998 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>连库查询 · 工作台原型 · 码上 CodeNow</title>
+<link rel="stylesheet" href="_theme.css">
+<style>
+  /* 工作台铺满 / 左表右网格已进 _theme.css（.dbq-pane .dbq-bench .trow）。本页只留原型提示。 */
+  .dbq-note { flex: none; margin-bottom: 10px; }
+  .toast {
+    position: fixed; right: 22px; bottom: 22px; z-index: 20;
+    padding: 10px 14px; border-radius: var(--r2); border: 1px solid var(--line);
+    background: var(--panel); box-shadow: var(--glow); font-size: 13px;
+  }
+  .pbar { height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--line) 55%, transparent); overflow: hidden }
+  .pbar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--acc), var(--acc2)); transition: width .2s ease }
+  .clog { font: 12px/2 var(--mono); max-height: 220px; overflow: auto; padding: 8px 12px;
+    background: color-mix(in srgb, var(--panel2) 65%, transparent); border-radius: var(--r2) }
+  .clog .fp { color: var(--acc) } .clog .fh { color: var(--ok) } .clog .fn { color: var(--dimmer) }
+  /*
+   * 预览布局：勾列 + 条件必须露出来。主题里 sqlcard 限高 46% 且 overflow:hidden，
+   * 文本框一占，下面两块会被裁成 0——截图就是这样。预览页单独抬高、卡内可滚。
+   */
+  .workcol .sqlcard {
+    max-height: min(560px, 62%);
+    flex: 0 1 auto;
+  }
+  .workcol .sqlcard > .cbody {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .workcol .sqlcard .qcols {
+    flex: none;
+    min-height: 96px;
+    max-height: 120px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .workcol .sqlcard .qcols .cols {
+    flex: 1 1 auto;
+    min-height: 56px;
+    overflow: auto;
+  }
+  .workcol .sqlcard .qconds {
+    flex: none;
+    margin-top: 0;
+    padding: 8px 12px 10px;
+    border-top: 1px solid var(--line);
+  }
+  .workcol .sqlcard .qconds .row { flex: none; margin-bottom: 6px; flex-wrap: wrap; gap: 6px }
+  .workcol .sqlcard .qconds .cond-cols {
+    max-height: 160px;
+    min-height: 72px;
+    overflow: auto;
+  }
+</style>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="dbq"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">▦ 连库查询 · 工作台</div>
+        <div class="sub">手填或从我的连接回填 · 测试可记密码 · 连上后点表立刻查</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">先 200 行 · 加载全部最多 1 万</span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane dbq-pane">
+      <div class="pane-in dbq-in">
+
+        <div class="band info dbq-note" id="setupNote" hidden>
+          <b>原型：未连接。</b>
+          左边仍是上一版连接表单，可以手填。点「我的连接」只回填地址，密码现填、不保存。
+        </div>
+        <div class="band info dbq-note" id="benchNote">
+          <b>布局预览：条件字段。</b>
+          SQL → 勾列 → 条件（默认不勾，保持 <span class="mono">SELECT *</span>）→ 结果。
+          勾条件 / 改操作符会重写 WHERE；改值回车或点运行再查。静态页不真连库。
+          <a href="#" id="toSetup" style="margin-left:8px">看未连接态</a>
+        </div>
+
+        <div class="dbq-setup" id="setup" hidden>
+          <div class="split even">
+            <div class="col">
+              <div class="card">
+                <i class="corner tl"></i>
+                <div class="chead">
+                  <span class="dot"></span>
+                  <span class="h">连接信息</span>
+                  <span class="who" id="formWho">Oracle</span>
+                </div>
+                <div class="cbody stack">
+                  <div class="row">
+                    <span class="lbl">类型</span>
+                    <div class="seg" id="qKind">
+                      <button type="button" class="on" data-v="oracle">Oracle</button>
+                      <button type="button" data-v="mysql">MySQL</button>
+                      <button type="button" disabled title="PG 的系统目录不同，排后续版本">PostgreSQL</button>
+                    </div>
+                  </div>
+                  <div class="row">
+                    <span class="lbl">主机</span>
+                    <input class="fld grow" id="qHost" placeholder="如 10.0.1.8" value="localhost">
+                    <span class="lbl">端口</span>
+                    <input class="fld fix" id="qPort" placeholder="1521" value="1521">
+                  </div>
+                  <div class="row">
+                    <span class="lbl">用户名</span>
+                    <input class="fld grow" id="qUser" placeholder="如 SCOTT">
+                  </div>
+                  <div class="row">
+                    <span class="lbl">密码</span>
+                    <input class="fld grow" id="qPass" type="password" placeholder="不落盘" aria-label="密码">
+                  </div>
+                  <div class="row">
+                    <span class="lbl" id="qDbLbl">服务名</span>
+                    <input class="fld grow mono" id="qDb" placeholder="如 ORCLPDB1">
+                  </div>
+                  <span class="hint" id="qHint">填主机 + SERVICE_NAME（如 ORCLPDB1）。只有 SID 写成 :ORCL。12.1+ 免客户端。11g：含客户端安装包，或本机已有 Instant Client。</span>
+                  <div class="row">
+                    <div class="spacer"></div>
+                    <button class="primary" type="button" id="qGo">🔌 连接并读取</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="chead">
+                  <span class="h">我的连接</span>
+                  <span class="who">点了回填地址 · 不回填密码</span>
+                  <div class="spacer"></div>
+                  <a class="mini" id="toConns" href="db-conns.html">去管理</a>
+                </div>
+                <div class="cbody stack">
+                  <div class="row" id="qChips" style="flex-wrap:wrap"></div>
+                  <div class="band">回填类型、主机、端口、用户、库名。密码框保持空的，不落盘。</div>
+                </div>
+              </div>
+            </div>
+            <div class="col">
+              <div class="card" id="statCard">
+                <i class="corner tl"></i>
+                <div class="chead">
+                  <span class="dot"></span>
+                  <span class="h" id="statH">还未连接</span>
+                  <span class="who" id="statWho">点左边「连接并读取」</span>
+                </div>
+                <div class="cbody stack" id="statBody">
+                  <div class="empty">填完左边再连。右边会先出进度：正在连接、正在读表清单。不会一点就切走，免得以为没反应。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dbq-bench" id="bench">
+          <div class="navcol">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead">
+                <span class="dot"></span>
+                <span class="h">已连接</span>
+                <span class="who">Oracle</span>
+                <div class="spacer"></div>
+                <button class="mini" type="button" id="btnDisc">断开</button>
+              </div>
+              <div class="cbody" style="padding:10px 14px">
+                <div class="connline" id="liveLine"><b>开发库</b> · Oracle · localhost:1521/ORCLPDB1 · SCOTT</div>
+                <div class="hint" style="margin-top:6px">密码没落盘。先 200 行，加载全部最多 1 万。</div>
+              </div>
+            </div>
+
+            <div class="card grow">
+              <div class="chead">
+                <span class="dot"></span>
+                <span class="h">表</span>
+                <span class="who">86</span>
+                <div class="spacer"></div>
+                <button class="mini" type="button">导入勾选</button>
+              </div>
+              <div class="cbody">
+                <div class="tfilter">
+                  <input class="fld" id="tFilter" placeholder="过滤表名 / 注释" aria-label="过滤表名">
+                </div>
+                <div class="tlist" id="tList"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="workcol">
+            <div class="card sqlcard">
+              <div class="chead">
+                <span class="dot"></span>
+                <span class="h">SQL</span>
+                <span class="who" id="sqlWho">Oracle · 勾列 11/11</span>
+                <div class="spacer"></div>
+                <button class="mini" type="button" title="原型：弹窗贴 ALTER">执行 ALTER</button>
+                <button class="primary" type="button" id="run">运行</button>
+              </div>
+              <div class="cbody tight">
+                <textarea class="fld mono flush" id="sql" rows="3" aria-label="查询 SQL" placeholder="SELECT * FROM …"></textarea>
+
+                <div class="qcols" id="qcols">
+                  <div class="row">
+                    <span class="hint" style="margin:0">查询字段</span>
+                    <div class="spacer"></div>
+                    <button class="mini" type="button" id="colAll">全选</button>
+                    <button class="mini" type="button" id="colNone">全不选</button>
+                    <button class="mini" type="button" id="colNoAudit">排除审计字段</button>
+                  </div>
+                  <div class="cols" id="colPick"></div>
+                </div>
+
+                <div class="qconds" id="qconds">
+                  <div class="row">
+                    <span class="hint" style="margin:0">条件</span>
+                    <span class="hint" style="margin:0;opacity:.75">默认不勾 · 勾了才拼 WHERE · 空值 = IS NULL</span>
+                    <div class="spacer"></div>
+                    <button class="mini" type="button" id="condAll">全选</button>
+                    <button class="mini" type="button" id="condNone">全不选</button>
+                  </div>
+                  <div class="cond-cols" id="condPick"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card sheet">
+              <i class="corner tl"></i>
+              <div class="chead">
+                <span class="dot"></span>
+                <span class="h">查询结果</span>
+                <span class="who" id="who">点表立刻查</span>
+                <div class="spacer"></div>
+                <input class="fld" id="rowFilter" placeholder="结果内筛选" aria-label="结果内筛选" style="width:160px">
+                <button class="mini" type="button" id="copyTsv">复制 TSV</button>
+                <button class="mini" type="button" id="copyIns">复制 INSERT</button>
+                <button class="mini" type="button" id="insRow">插入一行</button>
+                <button class="mini" type="button" id="toS2u">转 UPDATE</button>
+                <button class="mini" type="button" id="updRows">更新勾选行</button>
+                <button class="mini bad" type="button" id="delRows">删除勾选行</button>
+              </div>
+              <div class="cbody">
+                <div class="qgrid-wrap" id="gridWrap" style="flex:1;max-height:none"></div>
+                <div class="qgrid-foot">
+                  <div class="cellv" id="cellv"><em>点一个格子</em>底栏显示全文。点列头排序。</div>
+                </div>
+                <div class="cut" id="cut" hidden></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script src="_data.js"></script>
+<script>
+(function () {
+  const { esc } = UI
+  const { conns, CONN_ENV, CONN_KIND } = DATA
+  const $ = (id) => document.getElementById(id)
+  const theme = () => new URLSearchParams(location.search).get('t') || UI.theme()
+
+  const HINTS = {
+    oracle: {
+      who: 'Oracle',
+      dbLbl: '服务名',
+      db: '如 ORCLPDB1',
+      hint: '填主机 + SERVICE_NAME（如 ORCLPDB1）。只有 SID 写成 :ORCL。12.1+ 免客户端。11g：含客户端安装包，或本机已有 Instant Client。',
+      port: '1521',
+    },
+    mysql: {
+      who: 'MySQL',
+      dbLbl: '数据库名',
+      db: '如 mall',
+      hint: '填这个库的名字。库不存在会直接连不上。',
+      port: '3306',
+    },
+  }
+
+  let kind = 'oracle'
+  let pickedName = ''
+
+  $('toConns').href = 'db-conns.html?t=' + theme()
+
+  function setKind(next, keepPort) {
+    kind = next
+    const h = HINTS[kind]
+    $('formWho').textContent = h.who
+    $('qDbLbl').textContent = h.dbLbl
+    $('qDb').placeholder = h.db
+    $('qHint').textContent = h.hint
+    if (!keepPort) $('qPort').value = h.port
+    $('qKind').querySelectorAll('button[data-v]').forEach((b) => b.classList.toggle('on', b.dataset.v === kind))
+  }
+
+  function fillFrom(it) {
+    setKind(it.kind, true)
+    $('qHost').value = it.host
+    $('qPort').value = it.port
+    $('qUser').value = it.user
+    $('qDb').value = it.db
+    $('qPass').value = ''
+    pickedName = it.name
+    $('qPass').focus()
+  }
+
+  function paintChips() {
+    $('qChips').innerHTML = conns.map((it) => {
+      const e = CONN_ENV[it.env]
+      return `<button type="button" class="chip" data-id="${it.id}"><i>${esc(it.name)}</i>&nbsp;${esc(it.host)}/${esc(it.db)}</button>`
+    }).join('')
+    $('qChips').querySelectorAll('[data-id]').forEach((b) => {
+      b.onclick = () => {
+        const it = conns.find((x) => x.id === Number(b.dataset.id))
+        if (it) fillFrom(it)
+      }
+    })
+  }
+
+  let connecting = false
+
+  function wait(ms) {
+    return new Promise((r) => setTimeout(r, ms))
+  }
+
+  function idleStat() {
+    $('statH').textContent = '还未连接'
+    $('statWho').textContent = '点左边「连接并读取」'
+    $('statBody').innerHTML = '<div class="empty">填完左边再连。右边会先出进度：正在连接、正在读表清单。不会一点就切走，免得以为没反应。</div>'
+  }
+
+  function goLive() {
+    if (connecting) return
+    if (!$('qHost').value.trim() || !$('qPort').value.trim() || !$('qUser').value.trim() || !$('qDb').value.trim()) {
+      toast('主机、端口、用户、库名都要填')
+      return
+    }
+    if (!$('qPass').value) {
+      toast('密码还是空的（原型也拦一下，真连时同样要填）')
+      return
+    }
+    void runConnect()
+  }
+
+  async function runConnect() {
+    connecting = true
+    const host = $('qHost').value.trim()
+    const port = $('qPort').value.trim()
+    const user = $('qUser').value.trim()
+    const db = $('qDb').value.trim()
+    const name = pickedName || CONN_KIND[kind]
+    const btn = $('qGo')
+    btn.disabled = true
+    btn.textContent = '⏳ 正在连接…'
+
+    $('statH').textContent = '正在连接'
+    $('statWho').textContent = CONN_KIND[kind]
+    $('statBody').innerHTML = `
+      <div class="pbar"><i id="statBar" style="width:8%"></i></div>
+      <div class="clog" id="statLog"></div>`
+    const log = $('statLog')
+    const bar = $('statBar')
+    const line = (cls, text) => {
+      const d = document.createElement('div')
+      d.className = cls
+      d.textContent = text
+      log.appendChild(d)
+      log.scrollTop = log.scrollHeight
+    }
+
+    line('fp', '连接 ' + CONN_KIND[kind] + ' ' + host + ':' + port + '/' + db + ' …')
+    await wait(380)
+    bar.style.width = '28%'
+    line('fn', '握手成功 · 用户 ' + user)
+    await wait(320)
+    bar.style.width = '48%'
+    $('statH').textContent = '正在读取表清单'
+    line('fp', kind === 'oracle' ? '查询 USER_TABLES / USER_TAB_COMMENTS …' : '查询 information_schema.TABLES …')
+    await wait(420)
+    bar.style.width = '72%'
+    line('fn', '已读到 24 张表')
+    await wait(280)
+    bar.style.width = '88%'
+    line('fn', '已读到 86 张表 · 外键 12 条')
+    await wait(260)
+    bar.style.width = '100%'
+    line('fh', '✓ 读完，进入工作台')
+    await wait(420)
+
+    showBench(name, host, port, db, user)
+    btn.disabled = false
+    btn.textContent = '🔌 连接并读取'
+    connecting = false
+  }
+
+  function showBench(name, host, port, db, user) {
+    $('setup').hidden = true
+    $('setupNote').hidden = true
+    $('bench').hidden = false
+    $('benchNote').hidden = false
+    document.querySelector('.app').classList.add('rail-slim')
+    $('liveLine').innerHTML = `<b>${esc(name)}</b> · ${esc(CONN_KIND[kind])} · ${esc(host)}:${esc(port)}/${esc(db)} · ${esc(user)}`
+    const whoSql = $('sqlWho')
+    if (whoSql) whoSql.textContent = CONN_KIND[kind]
+  }
+
+  function goSetup() {
+    $('bench').hidden = true
+    $('benchNote').hidden = true
+    $('setup').hidden = false
+    $('setupNote').hidden = false
+    document.querySelector('.app').classList.remove('rail-slim')
+    $('qPass').value = ''
+    connecting = false
+    $('qGo').disabled = false
+    $('qGo').textContent = '🔌 连接并读取'
+    idleStat()
+  }
+
+  $('qKind').querySelectorAll('button[data-v]').forEach((b) => {
+    b.onclick = () => { if (!b.disabled) setKind(b.dataset.v) }
+  })
+  $('qGo').onclick = goLive
+  $('btnDisc').onclick = goSetup
+  $('toSetup').onclick = (e) => { e.preventDefault(); goSetup() }
+  paintChips()
+  setKind('oracle')
+  document.querySelector('.app').classList.add('rail-slim')
+
+  const from = Number(new URLSearchParams(location.search).get('c'))
+  const pre = conns.find((c) => c.id === from)
+  if (pre) fillFrom(pre)
+
+  const CAP = 200
+  const CAP_ALL = 10000
+  const TABLES = [
+    ['SYS_USER', '用户'],
+    ['SYS_ROLE', '角色'],
+    ['SYS_DEPT', '部门'],
+    ['SYS_MENU', '菜单'],
+    ['ORD_ORDER', '订单'],
+    ['ORD_ITEM', '订单明细'],
+    ['PAY_RECORD', '支付流水'],
+    ['INV_STOCK', '库存'],
+    ['CRM_CUSTOMER', '客户'],
+    ['CRM_CONTACT', '联系人'],
+  ]
+  const NAMES = [
+    ['zhangsan', '张三'], ['lisi', '李四'], ['wangwu', '王五'], ['zhaoliu', '赵六'],
+    ['sunqi', '孙七'], ['zhouba', '周八'], ['wujiu', '吴九'], ['zhengshi', '郑十'],
+  ]
+
+  function userRow(i) {
+    const [un, rn] = NAMES[i % NAMES.length]
+    const nullish = i % 5 === 2
+    return {
+      ID: String(10001 + i),
+      USER_NAME: un,
+      REAL_NAME: rn,
+      MOBILE: '138' + String(10000000 + i * 17).slice(-8),
+      EMAIL: un + '@corp.example.com',
+      DEPT_ID: String(10 + (i % 8)),
+      STATUS: i % 7 === 0 ? '9' : '1',
+      CREATE_TIME: '2024-03-12 09:18:00',
+      REMARK: i % 3 === 0 ? '从旧系统迁移；备注很长，网格里只显示开头。' : (i % 4 === 1 ? null : '正常'),
+      CITY: '南京',
+      EXT_JSON: '{"level":' + (i % 4) + ',"tags":["vip"]}',
+    }
+  }
+
+  const SCHEMAS = {
+    SYS_USER: {
+      cols: [
+        { name: 'ID', pk: true, comment: '主键' },
+        { name: 'USER_NAME', comment: '登录名' },
+        { name: 'REAL_NAME', comment: '姓名' },
+        { name: 'MOBILE', comment: '手机' },
+        { name: 'EMAIL', comment: '邮箱' },
+        { name: 'DEPT_ID', comment: '部门' },
+        { name: 'STATUS', comment: '状态' },
+        { name: 'CREATE_TIME', comment: '创建时间', audit: true },
+        { name: 'REMARK', comment: '备注' },
+        { name: 'CITY', comment: '城市' },
+        { name: 'EXT_JSON', comment: '扩展' },
+      ],
+      total: 280,
+      row: userRow,
+    },
+    SYS_ROLE: {
+      cols: [
+        { name: 'ID', pk: true },
+        { name: 'ROLE_CODE' },
+        { name: 'ROLE_NAME' },
+        { name: 'STATUS' },
+        { name: 'REMARK' },
+      ],
+      total: 8,
+      row: (i) => ({
+        ID: String(i + 1),
+        ROLE_CODE: ['admin', 'ops', 'sales', 'finance', 'guest', 'auditor', 'dev', 'hr'][i],
+        ROLE_NAME: ['管理员', '运维', '销售', '财务', '访客', '审计', '研发', '人事'][i],
+        STATUS: '1',
+        REMARK: i === 0 ? '超级管理员，勿删' : null,
+      }),
+    },
+    ORD_ORDER: {
+      cols: [
+        { name: 'ORDER_NO', pk: true, comment: '订单号' },
+        { name: 'USER_ID', comment: '用户' },
+        { name: 'AMOUNT', comment: '金额' },
+        { name: 'STATUS', comment: '状态' },
+        { name: 'CREATE_TIME', comment: '下单时间', audit: true },
+        { name: 'REMARK', comment: '备注' },
+      ],
+      total: 20,
+      row: (i) => ({
+        ORDER_NO: 'O202608' + String(10000 + i),
+        USER_ID: String(10001 + (i % 12)),
+        AMOUNT: (88 + i * 13.5).toFixed(2),
+        STATUS: ['待付', '已付', '发货', '完成'][i % 4],
+        CREATE_TIME: '2026-08-2' + (i % 9) + ' 10:00:00',
+        REMARK: i % 4 === 0 ? '含运费；发票抬头写公司全称。' : null,
+      }),
+    },
+  }
+
+  function fallbackSchema(name) {
+    return {
+      cols: [
+        { name: 'ID', pk: true },
+        { name: 'NAME' },
+        { name: 'STATUS' },
+        { name: 'CREATE_TIME', audit: true },
+      ],
+      total: 12,
+      row: (i) => ({ ID: String(i + 1), NAME: name + '_' + (i + 1), STATUS: '1', CREATE_TIME: '2026-08-01 00:00:00' }),
+    }
+  }
+
+  const OPS = [
+    ['eq', '='], ['ne', '<>'], ['gt', '>'], ['ge', '>='], ['lt', '<'], ['le', '<='], ['like', 'LIKE'],
+  ]
+
+  const tList = $('tList')
+  const sqlEl = $('sql')
+  const gridWrap = $('gridWrap')
+  const cellv = $('cellv')
+  const who = $('who')
+  const cut = $('cut')
+  const rowFilter = $('rowFilter')
+  const colPick = $('colPick')
+  const condPick = $('condPick')
+  const qcols = $('qcols')
+  const qconds = $('qconds')
+  const sqlWho = $('sqlWho')
+
+  let cols = []
+  let rows = []
+  let sort = null
+  let selected = new Set()
+  let tableName = ''
+  let capUsed = CAP
+  let truncated = false
+  /** 当前表字段元数据；点表后才有 */
+  let meta = []
+  /** null = 全选；[] = 全不选 */
+  let selectedCols = null
+  /** null = 未动，不加 WHERE；[] = 明确全不选 */
+  let condOn = null
+  let condOps = {}
+  let condVals = {}
+
+  function toast(msg) {
+    const el = document.createElement('div')
+    el.className = 'toast'
+    el.textContent = msg
+    document.body.appendChild(el)
+    setTimeout(() => el.remove(), 2200)
+  }
+
+  function qId(name) { return '"' + name + '"' }
+  function firstWord(sql) {
+    const m = sql.replace(/^\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/|\s+)*/g, '').match(/^[A-Za-z_]+/)
+    return m ? m[0].toUpperCase() : ''
+  }
+  function tableFromSql(sql) {
+    const m = sql.match(/from\s+("([^"]+)"|`([^`]+)`|([A-Za-z_][\w$#]*))/i)
+    return m ? (m[2] || m[3] || m[4] || '') : ''
+  }
+
+  function schemaOf(name) {
+    return SCHEMAS[String(name).toUpperCase()] || fallbackSchema(name || 'Q')
+  }
+
+  function pickNames() {
+    if (selectedCols === null) return meta.map((c) => c.name)
+    return selectedCols
+  }
+
+  function condNames() {
+    return condOn === null ? [] : condOn
+  }
+
+  function lit(op, raw) {
+    const v = (raw ?? '').trim()
+    if (v === '') return null
+    if (op === 'like') {
+      const like = /[%_]/.test(v) ? v : '%' + v + '%'
+      return "'" + like.replace(/'/g, "''") + "'"
+    }
+    if (/^-?\d+(\.\d+)?$/.test(v)) return v
+    return "'" + v.replace(/'/g, "''") + "'"
+  }
+
+  function buildSql() {
+    if (!tableName || !meta.length) return ''
+    const names = pickNames()
+    if (names.length === 0) return ''
+    const all = names.length === meta.length
+    const fields = all ? '*' : names.map(qId).join(', ')
+    const where = condNames().map((n) => {
+      const op = condOps[n] || 'eq'
+      const sqlOp = (OPS.find((x) => x[0] === op) || OPS[0])[1]
+      const L = lit(op, condVals[n])
+      if (L === null) return qId(n) + ' IS NULL'
+      return qId(n) + ' ' + sqlOp + ' ' + L
+    })
+    let q = 'SELECT ' + fields + ' FROM ' + qId(tableName)
+    if (where.length) q += ' WHERE ' + where.join(' AND ')
+    return q
+  }
+
+  function paintPicks() {
+    if (!meta.length) {
+      qcols.hidden = true
+      qconds.hidden = true
+      return
+    }
+    qcols.hidden = false
+    qconds.hidden = false
+    const onCols = pickNames()
+    colPick.innerHTML = meta.map((c) => {
+      const on = onCols.includes(c.name)
+      return `<label class="cb" title="${esc(c.comment || c.name)}">
+        <input type="checkbox" data-col="${esc(c.name)}"${on ? ' checked' : ''}>
+        <span><span class="cn">${esc(c.name)}</span>${c.pk ? '<span class="tag pk">PK</span>' : ''}</span>
+      </label>`
+    }).join('')
+    const onCond = new Set(condNames())
+    condPick.innerHTML = meta.map((c) => {
+      const on = onCond.has(c.name)
+      const op = condOps[c.name] || 'eq'
+      const ops = OPS.map(([v, lab]) => `<option value="${v}"${v === op ? ' selected' : ''}>${lab}</option>`).join('')
+      return `<div class="cond-cell${on ? '' : ' off'}" title="${esc(c.comment || c.name)}">
+        <label class="cb">
+          <input type="checkbox" data-cond="${esc(c.name)}"${on ? ' checked' : ''}>
+          <span><span class="cn">${esc(c.name)}</span>${c.pk ? '<span class="tag pk">PK</span>' : ''}</span>
+        </label>
+        ${on ? `<div class="cond-pair">
+          <select class="fld op" data-op="${esc(c.name)}" aria-label="${esc(c.name)} 比较">${ops}</select>
+          <input class="fld" data-val="${esc(c.name)}" value="${esc(condVals[c.name] || '')}" placeholder="值 · 空=IS NULL" aria-label="${esc(c.name)} 条件值">
+        </div>` : ''}
+      </div>`
+    }).join('')
+    sqlWho.textContent = 'Oracle · 勾列 ' + onCols.length + '/' + meta.length +
+      (onCond.size ? ' · 条件 ' + onCond.size : '')
+  }
+
+  function applyRebuild(run) {
+    const q = buildSql()
+    if (!q) {
+      sqlEl.value = ''
+      cols = []
+      rows = []
+      paintGrid()
+      toast('没有选中任何字段')
+      paintPicks()
+      return
+    }
+    sqlEl.value = q
+    paintPicks()
+    if (run) runSql(q, false)
+  }
+
+  function paintTables(q) {
+    const needle = (q || '').trim().toLowerCase()
+    tList.innerHTML = TABLES.filter(([n, c]) => !needle || n.toLowerCase().includes(needle) || c.includes(needle))
+      .map(([n, c]) =>
+        `<div class="trow${n === tableName ? ' on' : ''}" data-t="${n}">
+          <input type="checkbox" checked>
+          <span class="tn">${n}</span>
+          <span class="tc">${c}</span>
+        </div>`).join('')
+  }
+  paintTables('')
+  $('tFilter').addEventListener('input', () => paintTables($('tFilter').value))
+
+  function compare(a, b) {
+    const ea = a === '' || a == null
+    const eb = b === '' || b == null
+    if (ea && eb) return 0
+    if (ea) return 1
+    if (eb) return -1
+    if (/^-?\d+(\.\d+)?$/.test(a) && /^-?\d+(\.\d+)?$/.test(b)) return Number(a) - Number(b)
+    return String(a).localeCompare(String(b), 'zh')
+  }
+
+  function viewIndex() {
+    const q = rowFilter.value.trim().toLowerCase()
+    let idx = rows.map((_, i) => i)
+    if (q) idx = idx.filter((i) => cols.some((c) => String(rows[i][c] ?? '').toLowerCase().includes(q)))
+    if (sort) {
+      const { col, dir } = sort
+      idx.sort((i, j) => {
+        const c = compare(rows[i][col] ?? '', rows[j][col] ?? '')
+        return dir === 'asc' ? c : -c
+      })
+    }
+    return idx
+  }
+
+  function picked() {
+    const view = viewIndex()
+    const on = view.filter((i) => selected.has(i))
+    return on.length ? on : view
+  }
+
+  function paintGrid() {
+    if (!cols.length) {
+      gridWrap.innerHTML = '<div class="empty" style="padding:28px 16px">写一条 SELECT，或点左边一张表立刻查询。</div>'
+      who.textContent = '点表立刻查'
+      cut.hidden = true
+      return
+    }
+    const view = viewIndex()
+    const numish = /(_ID|AMOUNT|SORT|^ID$)/
+    const allOn = view.length > 0 && view.every((i) => selected.has(i))
+    const head =
+      '<th class="rn">#</th><th class="ck"><input type="checkbox" id="ckAll"' + (allOn ? ' checked' : '') + '></th>' +
+      cols.map((n) => {
+        const on = sort && sort.col === n
+        const mark = on ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : ''
+        return `<th class="sorter${on ? ' on' : ''}${numish.test(n) ? ' num' : ''}" data-col="${esc(n)}">${esc(n)}${mark}</th>`
+      }).join('')
+    const body = view.map((ri, vis) => {
+      const r = rows[ri]
+      const cells = cols.map((n) => {
+        const raw = r[n]
+        const empty = raw === null || raw === undefined || raw === ''
+        const cls = [numish.test(n) ? 'num' : '', empty ? 'null' : ''].filter(Boolean).join(' ')
+        return `<td class="${cls}" data-col="${esc(n)}" data-v="${empty ? '' : esc(raw)}" title="${empty ? 'NULL' : esc(raw)}">${empty ? 'NULL' : esc(raw)}</td>`
+      }).join('')
+      return `<tr class="${selected.has(ri) ? 'on' : ''}" data-i="${ri}"><td class="rn">${vis + 1}</td><td class="ck"><input type="checkbox"${selected.has(ri) ? ' checked' : ''}></td>${cells}</tr>`
+    }).join('')
+    gridWrap.innerHTML = `<table class="qgrid"><thead><tr>${head}</tr></thead><tbody>${body || '<tr><td colspan="' + (cols.length + 2) + '" class="empty">筛选条件下没有行</td></tr>'}</tbody></table>`
+    who.textContent = view.length + ' 行 · ' + cols.length + ' 列' + (truncated ? ' · 已截到 ' + capUsed : '') + (selected.size ? ' · 勾选 ' + selected.size : '')
+    if (truncated && capUsed < CAP_ALL) {
+      cut.hidden = false
+      cut.innerHTML = '已截到 ' + capUsed + ' 行。 <button class="mini" type="button" id="loadAll">加载全部（最多 ' + CAP_ALL + ' 行）</button>'
+    } else if (truncated) {
+      cut.hidden = false
+      cut.textContent = '已到 ' + CAP_ALL + ' 行上限。要看后面的行请加 WHERE / ROWNUM / LIMIT。'
+    } else {
+      cut.hidden = true
+    }
+  }
+
+  function runSql(text, loadAll) {
+    const sql = (text || '').trim()
+    selected = new Set()
+    sort = null
+    rowFilter.value = ''
+    if (!sql) {
+      cols = []
+      rows = []
+      paintGrid()
+      cellv.innerHTML = '<em>点一个格子</em>底栏显示全文。点列头排序。'
+      return
+    }
+    const word = firstWord(sql)
+    if (!['SELECT', 'WITH', 'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN'].includes(word)) {
+      gridWrap.innerHTML = '<div class="band err" style="margin:16px">只接受只读查询（SELECT / WITH / SHOW），不执行 ' + esc(word || '空') + '</div>'
+      who.textContent = '已拒绝'
+      cut.hidden = true
+      return
+    }
+    tableName = tableFromSql(sql)
+    const spec = schemaOf(tableName)
+    capUsed = loadAll ? CAP_ALL : CAP
+    const n = Math.min(spec.total, capUsed)
+    truncated = spec.total > capUsed
+    /* 结果列：有勾选条件时仍按 SELECT 列表；SELECT * 用全字段名 */
+    const want = pickNames()
+    cols = want.length && want.length < spec.cols.length
+      ? want
+      : spec.cols.map((c) => c.name)
+    rows = Array.from({ length: n }, (_, i) => spec.row(i))
+    paintTables($('tFilter').value)
+    paintGrid()
+    cellv.innerHTML = '<em>点一个格子</em>底栏显示全文。点列头排序。'
+  }
+
+  function pickTable(name) {
+    tableName = name
+    meta = schemaOf(name).cols
+    selectedCols = null
+    condOn = null
+    condOps = {}
+    condVals = {}
+    applyRebuild(true)
+  }
+
+  function tsvOf(idx) {
+    return [cols.join('\t'), ...idx.map((i) => cols.map((c) => rows[i][c] ?? '').join('\t'))].join('\n')
+  }
+
+  function insertOf(idx) {
+    if (!tableName) {
+      toast('认不出表名。请点左边一张表再复制')
+      return ''
+    }
+    if (!idx.length) {
+      toast('先勾选要复制的行')
+      return ''
+    }
+    const head = 'INSERT INTO ' + qId(tableName) + ' (' + cols.map(qId).join(', ') + ') VALUES'
+    return idx.map((i) => {
+      const vals = cols.map((c) => {
+        const v = rows[i][c]
+        if (v === null || v === undefined || v === '') return 'NULL'
+        if (/^-?\d+(\.\d+)?$/.test(String(v))) return String(v)
+        return "'" + String(v).replace(/'/g, "''") + "'"
+      }).join(', ')
+      return head + ' (' + vals + ');'
+    }).join('\n')
+  }
+
+  async function copyText(text, ok) {
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      toast(ok)
+    } catch {
+      toast('复制失败（file:// 下可换浏览器或用真页面）')
+    }
+  }
+
+  tList.addEventListener('click', (e) => {
+    const row = e.target.closest('.trow')
+    if (!row || e.target.matches('input')) return
+    pickTable(row.dataset.t)
+  })
+
+  $('colAll').onclick = () => { selectedCols = null; applyRebuild(true) }
+  $('colNone').onclick = () => { selectedCols = []; applyRebuild(true) }
+  $('colNoAudit').onclick = () => {
+    selectedCols = meta.filter((c) => c.pk || !c.audit).map((c) => c.name)
+    applyRebuild(true)
+  }
+  $('condAll').onclick = () => {
+    condOn = meta.map((c) => c.name)
+    applyRebuild(true)
+  }
+  $('condNone').onclick = () => {
+    condOn = []
+    applyRebuild(true)
+  }
+
+  colPick.addEventListener('change', (e) => {
+    const el = e.target
+    if (!el.matches('input[data-col]')) return
+    const name = el.dataset.col
+    const cur = pickNames()
+    selectedCols = el.checked ? [...cur, name] : cur.filter((x) => x !== name)
+    applyRebuild(true)
+  })
+
+  condPick.addEventListener('change', (e) => {
+    const el = e.target
+    if (el.matches('input[data-cond]')) {
+      const name = el.dataset.cond
+      const cur = new Set(condNames())
+      if (el.checked) cur.add(name)
+      else cur.delete(name)
+      condOn = meta.filter((c) => cur.has(c.name)).map((c) => c.name)
+      applyRebuild(true)
+      return
+    }
+    if (el.matches('select[data-op]')) {
+      condOps[el.dataset.op] = el.value
+      applyRebuild(true)
+    }
+  })
+  condPick.addEventListener('input', (e) => {
+    const el = e.target
+    if (!el.matches('input[data-val]')) return
+    condVals[el.dataset.val] = el.value
+    sqlEl.value = buildSql()
+  })
+  condPick.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || !e.target.matches('input[data-val]')) return
+    e.preventDefault()
+    applyRebuild(true)
+  })
+
+  $('run').addEventListener('click', () => runSql(sqlEl.value, false))
+  sqlEl.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault()
+      runSql(sqlEl.value, false)
+    }
+  })
+  rowFilter.addEventListener('input', paintGrid)
+
+  gridWrap.addEventListener('click', (e) => {
+    if (e.target.id === 'ckAll') {
+      const view = viewIndex()
+      const on = e.target.checked
+      view.forEach((i) => on ? selected.add(i) : selected.delete(i))
+      paintGrid()
+      return
+    }
+    const tr = e.target.closest('tr[data-i]')
+    if (e.target.matches('input[type=checkbox]') && tr) {
+      const i = Number(tr.dataset.i)
+      if (e.target.checked) selected.add(i)
+      else selected.delete(i)
+      paintGrid()
+      return
+    }
+    const th = e.target.closest('th.sorter')
+    if (th) {
+      const col = th.dataset.col
+      if (!sort || sort.col !== col) sort = { col, dir: 'asc' }
+      else if (sort.dir === 'asc') sort = { col, dir: 'desc' }
+      else sort = null
+      paintGrid()
+      return
+    }
+    const td = e.target.closest('td')
+    if (!td || td.classList.contains('rn') || td.classList.contains('ck')) return
+    gridWrap.querySelectorAll('td.oncell').forEach((el) => el.classList.remove('oncell'))
+    td.classList.add('oncell')
+    const col = td.dataset.col || ''
+    const v = td.dataset.v
+    cellv.innerHTML = v === '' && td.classList.contains('null')
+      ? '<em>' + esc(col) + '</em>NULL'
+      : '<em>' + esc(col) + '</em>' + esc(v)
+  })
+
+  cut.addEventListener('click', (e) => {
+    if (e.target.id === 'loadAll') runSql(sqlEl.value, true)
+  })
+
+  $('copyTsv').addEventListener('click', () => copyText(tsvOf(picked()), '已复制 TSV'))
+  $('copyIns').addEventListener('click', () => copyText(insertOf(picked()), '已复制 INSERT（不在本库执行）'))
+  $('insRow').addEventListener('click', () => {
+    if (!confirm('原型：插入一行？真页面会先勾字段、出 SQL 再执行。自增列默认不写。')) return
+    toast('原型不真插。真页面会 INSERT VALUES 一行')
+  })
+  $('toS2u').addEventListener('click', () => {
+    const idx = picked()
+    if (!idx.length) { toast('没有可送的行'); return }
+    try { sessionStorage.setItem('chuju-s2u-paste', tsvOf(idx)) } catch { /* file:// */ }
+    toast('真页面会跳到 SELECT转UPDATE，并把这 ' + idx.length + ' 行带过去')
+  })
+  $('delRows').addEventListener('click', () => {
+    const idx = picked()
+    if (!idx.length) { toast('先勾选要删的行'); return }
+    if (!confirm('原型：按主键删除这 ' + idx.length + ' 行？真页面会先出 SQL 再执行。')) return
+    toast('原型不真删。真页面会按主键 DELETE 这 ' + idx.length + ' 行')
+  })
+  $('updRows').addEventListener('click', () => {
+    const idx = picked()
+    if (!idx.length) { toast('先勾选要改的行'); return }
+    if (!confirm('原型：按主键更新这 ' + idx.length + ' 行？真页面会先勾 SET 字段、出 SQL 再执行。')) return
+    toast('原型不真改。真页面会按主键 UPDATE 这 ' + idx.length + ' 行')
+  })
+
+  /* 打开就进工作台并点一张表，方便看条件布局 */
+  pickTable('SYS_USER')
+})()
+</script>
+</body>
+</html>

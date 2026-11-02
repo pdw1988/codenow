@@ -1,0 +1,473 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>样式总览 · 码上 CodeNow 原型</title>
+<link rel="stylesheet" href="_theme.css">
+<style>
+  .tiles{ display:grid; grid-template-columns:repeat(auto-fit, minmax(320px,1fr)); gap:14px }
+  /* 每块预览自带 data-theme，属性选择器不认死 <html>，所以 5 套皮能同屏并排比 */
+  .tile{ position:relative; border:1px solid var(--line); border-radius:var(--r); overflow:hidden;
+         background:var(--bg); color:var(--txt); font-family:var(--font); box-shadow:var(--glow) }
+  .tile .tbg{ position:absolute; inset:0; pointer-events:none;
+    background-image:linear-gradient(var(--grid, transparent) 1px, transparent 1px),
+                     linear-gradient(90deg, var(--grid, transparent) 1px, transparent 1px);
+    background-size:var(--grid-size) var(--grid-size); display:var(--show-grid, block); opacity:.6 }
+  .tile .tglow{ position:absolute; inset:0; pointer-events:none; display:var(--show-aura, block); background:var(--aura1) }
+  .tile .tin{ position:relative; padding:14px }
+  .tile .th{ display:flex; align-items:center; gap:8px; margin-bottom:11px }
+  .tile .nm{ font-size:15px; font-weight:600 }
+  .tile .no{ font:10.5px/1 var(--mono); letter-spacing:var(--label-ls); text-transform:var(--label-tf); color:var(--dimmer) }
+  .tile .mini-code{ border:1px solid var(--line); border-radius:var(--r2); background:var(--panel2);
+    padding:9px 10px; font:11.5px/1.65 var(--mono); margin-top:10px; overflow:hidden; white-space:pre }
+  .tile .panel{ border:1px solid var(--line); border-radius:var(--r2); background:var(--panel);
+    padding:10px; backdrop-filter:var(--blur) }
+  .tile .pick{ width:100%; margin-top:11px; border:0; border-radius:var(--r2); cursor:pointer;
+    color:var(--acc-ink); background:linear-gradient(180deg, var(--acc), var(--acc2)); box-shadow:var(--acc-glow);
+    padding:9px; font:700 13px/1 var(--font) }
+  .tile.cur{ outline:2px solid var(--acc); outline-offset:2px }
+
+  .pgs{ display:grid; grid-template-columns:repeat(auto-fit, minmax(288px,1fr)); gap:12px }
+  .pg{ display:block; text-decoration:none; color:inherit; border:1px solid var(--line); border-radius:var(--r);
+       background:var(--panel); padding:14px; transition:.15s; position:relative; overflow:hidden }
+  .pg:hover{ border-color:var(--line2); transform:translateY(-2px); box-shadow:var(--glow) }
+  .pg .t{ font-size:15px; font-weight:600; display:flex; align-items:center; gap:8px }
+  .pg .d{ font-size:13px; color:var(--dim); margin-top:6px; line-height:1.6 }
+  .pg .c{ margin-top:10px; display:flex; flex-wrap:wrap; gap:6px }
+  h2.sh{ font-size:15px; margin:26px 0 12px; display:flex; align-items:center; gap:10px }
+  h2.sh::after{ content:''; flex:1; height:1px; background:var(--line) }
+
+  /* 架构图必须 white-space:pre —— .code pre 默认 pre-wrap，窄栏下会把 ASCII 树的缩进折断，
+     图就散了。宁可让它自己横向滚。b=层名/模块名，i=旁注 */
+  .arch pre{ white-space:pre; overflow:auto; font-size:12.5px; line-height:1.72 }
+  .arch pre b{ color:var(--acc); font-weight:600 }
+  .arch pre i{ color:var(--dimmer); font-style:normal }
+  .arch pre u{ color:var(--warn); text-decoration:none }
+</style>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="index"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">◈ 样式总览</div>
+        <!-- 数量交给 JS 算（见下方 paint）：写死的那份一路停在「6 个」，
+             而卡片都排到 8 张了——同一页上两个数字对不上，评审先怀疑的是内容不是标题 -->
+        <div class="sub" id="sub"></div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto" id="curTheme"></span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-in">
+        <div class="band info" style="margin-bottom:4px">
+          左边栏或右上角切主题，<b>数字键 1–5</b> 也行。选定后点某套下面的
+          <b>「用这套看全部页面」</b>，主题会跟着链接带到每一页。
+        </div>
+
+        <h2 class="sh">整体样式</h2>
+        <div class="tiles" id="tiles"></div>
+
+        <h2 class="sh">功能页原型</h2>
+        <div class="pgs" id="pgs"></div>
+
+        <h2 class="sh">技术架构</h2>
+        <div class="band info" style="margin-bottom:12px">
+          <b>单进程本地应用，没有服务端。</b>所谓「后端」= Tauri 壳 + 打包进去的 SQLite，跟前端在同一个进程里，
+          中间没有 HTTP、没有端口。分界线是两个接口：前端侧的 <span class="mono">MetaStore</span>，
+          Rust 侧的 <span class="mono">migration + 插件权限</span>。
+          <b>新增功能之前先在下面这张图上指出它该落在哪一层</b> —— 落错层的代价是它没法被单测。
+        </div>
+
+        <div class="stats" style="margin-bottom:14px">
+          <div class="stat acc"><div class="t">lib 纯函数模块</div><div class="v">13</div></div>
+          <div class="stat ok"><div class="t">单测 · 全绿</div><div class="v">173</div></div>
+          <div class="stat"><div class="t">缓存库表</div><div class="v">4</div></div>
+          <div class="stat"><div class="t">自定义 command</div><div class="v">0</div></div>
+          <div class="stat warn"><div class="t">Rust 编译验证</div><div class="v">0</div></div>
+        </div>
+
+        <div class="card" style="margin-bottom:14px">
+          <i class="corner tl"></i>
+          <div class="chead"><span class="dot"></span><span class="h">技术选型</span>
+            <div class="spacer"></div><span class="who">版本按 package.json / Cargo.toml 实抄</span></div>
+          <div class="cbody tight">
+            <table class="tbl">
+              <thead><tr><th>位置</th><th>用什么</th><th>版本</th><th>定了之后别乱动的原因</th></tr></thead>
+              <tbody>
+                <tr><td>界面</td><td class="mono">react + react-dom</td><td class="num">19.2</td>
+                  <td class="muted">函数组件 + hooks，无 class 组件</td></tr>
+                <tr><td>语言</td><td class="mono">typescript</td><td class="num">6.0</td>
+                  <td class="muted">三个子工程（app / node / test），app 侧不开 strict</td></tr>
+                <tr><td>组件库</td><td class="mono">antd + @ant-design/icons</td><td class="num">6.6 / 6.3</td>
+                  <td class="muted"><b>是 6 不是 5</b>：API 改名 + DOM 类名全变，照 v5 抄的 CSS 会静默不命中</td></tr>
+                <tr><td>状态</td><td class="mono">zustand</td><td class="num">5.0</td>
+                  <td class="muted">只搬数据不算逻辑，所以不需要 redux 那套中间件</td></tr>
+                <tr><td>构建</td><td class="mono">vite（+ plugin-react）</td><td class="num">8.2</td>
+                  <td class="muted">mockup/ 是纯静态文件，<b>不进 src/、不参与构建</b></td></tr>
+                <tr><td>SQL 解析</td><td class="mono">node-sql-parser</td><td class="num">5.4</td>
+                  <td class="muted">CJS，只能 default import；<span class="mono">oracle</span> 故意映射成
+                    <span class="mono">mysql</span>（plsql 根本不支持）；不认的类型词是整条语句报废</td></tr>
+                <tr><td>拼音搜索</td><td class="mono">pinyin-match</td><td class="num">1.2</td>
+                  <td class="muted"><span class="mono">match()</span> 对原文也返回 true，字面命中时必须跳过它</td></tr>
+                <tr><td>JSONPath</td><td class="mono">jsonpath-plus</td><td class="num">10.4</td>
+                  <td class="muted">只在工具页用，不参与主数据流</td></tr>
+                <tr><td>桌面壳</td><td class="mono">tauri（cli / crate）</td><td class="num">2.11</td>
+                  <td class="muted">edition 2021，rust-version 1.77.2；本机 rustc 1.98 已装</td></tr>
+                <tr><td>落盘</td><td class="mono">tauri-plugin-sql</td><td class="num">2 · JS 2.4</td>
+                  <td class="muted">sqlite feature = bundled，用户机器不用装 SQLite；
+                    <b>JS 侧那个包还没进 package.json</b>（见右下角）</td></tr>
+                <tr><td>日志</td><td class="mono">tauri-plugin-log</td><td class="num">2</td>
+                  <td class="muted">只在 <span class="mono">debug_assertions</span> 下挂</td></tr>
+                <tr><td>Lint</td><td class="mono">oxlint</td><td class="num">1.75</td>
+                  <td class="muted"><b>不是 eslint</b>，配置和插件名都别按 eslint 写</td></tr>
+                <tr><td>测试</td><td class="mono">tsx + node:test</td><td class="num">4.23</td>
+                  <td class="muted">不引 vitest / jest：<span class="mono">node:sqlite</span>
+                    能把生成的 SQL 真跑一遍，零新依赖</td></tr>
+                <tr><td>E2E</td><td class="mono">e2e.mjs（自写）</td><td class="num">—</td>
+                  <td class="muted">Node 内置 WebSocket 驱动 CDP，不装 puppeteer / playwright</td></tr>
+                <tr><td>安装包</td><td class="mono">NSIS</td><td class="num">—</td>
+                  <td class="muted">Windows 单平台，产物是一个 .exe 安装器</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="cbody stack" style="border-top:1px solid var(--line)">
+            <div class="band ok"><b>全程离线，没有一处网络请求</b>；没有服务端、没有 ORM、没有登录态。
+              新增依赖前先问：能不能用已有的这几个 + Node 内置能力做出来？</div>
+          </div>
+        </div>
+
+        <div class="split">
+          <div class="col">
+            <div class="card arch">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">前端分层</span>
+                <div class="spacer"></div><span class="who">依赖只准从上往下</span></div>
+              <div class="cbody stack">
+                <div class="code"><div class="code-bar"><span class="fn">src/ · 4 层</span></div><pre class="lg"><b>features/</b>  UI，按功能分目录（React 19 + antd 6）
+  importer   logfill   schema   sqlgen   tools
+      │  <i>只组装和展示：读 store、调 lib、把结果画出来</i>
+      ▼
+<b>store/</b>     zustand：把 MetaStore 的数据搬进内存并保持同步
+  useSchemaStore    useTemplateStore    useUiStore
+      │  <i>只有 CRUD 转发和 reload()，一行计算都不放</i>
+      ▼
+<b>storage/</b>   MetaStore 接口 —— 前端唯一的存储依赖
+  MemoryStore   浏览器 / SQLite 起不来时的降级兜底
+  SqliteStore   Tauri 壳内，<u>必须动态 import</u>（静态引崩浏览器）
+      │
+      ▼  <i>plugin:sql|execute  →  cache.db（见下方「后端」）</i>
+
+<b>lib/</b>       纯函数：无 React、无存储依赖，全部业务逻辑在这
+  ddlParser   oracleDdl   search   javaType
+  sqlgen/   dialect  statements  singleTable  multiTable
+            mybatis  executable  mockValue  ddlExport  logFill
+  <i>↑ features 和 store 都直接调它；它不反向依赖任何人</i></pre></div>
+                <div class="band ok"><b>计算不进 store。</b>搜索、SQL 生成、DDL 解析全是
+                  <span class="mono">lib/</span> 下的纯函数，<span class="mono">useMemo</span> 里实时重算 ——
+                  这不是洁癖，是为了让核心逻辑能被 <span class="mono">node:test</span> 直接跑到。
+                  右边那 173 条单测就是这么来的。</div>
+                <div class="band">写新代码先问一句：<b>这段能不能不带 React 写？</b>能，就落
+                  <span class="mono">lib/</span>；不能，才进 <span class="mono">features/</span>。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="card arch">
+              <div class="chead"><span class="h">两条数据流</span>
+                <div class="spacer"></div><span class="who">互不依赖</span></div>
+              <div class="cbody stack">
+                <div class="code"><div class="code-bar"><span class="fn">主流 · 表结构 → SQL</span></div><pre>粘贴 CREATE TABLE  <i>features/importer/DdlImport</i>
+  → <b>lib/oracleDdl</b>   无条件预处理：摘 comment on、换 Oracle 类型词、
+                    砍 tablespace（对纯 MySQL 是恒等变换，不用先猜方言）
+  → <b>lib/ddlParser</b>   node-sql-parser AST → TableInfo[] + ForeignKey[]
+  → <b>useSchemaStore.importTables()</b> → MetaStore → cache.db
+  → <b>lib/search</b>      PRD 3.4 的 7 条匹配规则（含拼音首字母）
+  → <b>useUiStore.jumpToSqlGen({tableName, relatedTables})</b>
+                    <i>← 跨 Tab 传上下文只走这一个口子</i>
+  → <b>lib/sqlgen/*</b>    useMemo 实时重算，没有「生成」按钮</pre></div>
+                <div class="code"><div class="code-bar"><span class="fn">第二条 · 日志转 SQL（不碰表结构缓存）</span></div><pre>粘贴日志  <i>onPaste 里从 clipboardData 取，不读 textarea.value</i>
+  → <b>logFill.parseLog</b>    5 种日志格式 → LogStatement[]
+  → 参数对照表（第几个 ? 拿了哪个值、进 SQL 长什么样，可改）
+  → <b>buildFilledSql → renderFilled</b>   全纯函数，47 条单测钉边界</pre></div>
+                <div class="band warn"><b>这条流故意不依赖缓存</b>：随手粘一段日志就能用，没导过表也不空手。
+                  所以它不准去读 <span class="mono">useSchemaStore</span> —— 一旦读了，
+                  「没导表也能用」这个卖点就没了。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="split even" style="margin-top:14px">
+          <div class="col">
+            <div class="card arch">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">后端 · Tauri 壳</span>
+                <div class="spacer"></div><span class="who">薄到只有 93 行</span></div>
+              <div class="cbody stack">
+                <div class="code"><div class="code-bar"><span class="fn">src-tauri/</span></div><pre><b>src/lib.rs</b>       唯一在做事的 Rust 文件（93 行）
+  SCHEMA_V1        4 张表 + 3 个索引
+  migrations()     version 1，一条 Up
+  tauri_plugin_sql features=["sqlite"]，bundled，用户不用装 SQLite
+  tauri_plugin_log 仅 debug_assertions
+<b>src/main.rs</b>      只调 devtools_lib::run()
+<b>capabilities/</b>    default.json：core:default + sql:default
+<b>tauri.conf.json</b>  identifier com.pdw.devtools
+                 窗口 1280×880 / min 960×600 / nsis 安装包
+<b>Cargo.toml</b>       tauri 2.11.3 · edition 2021 · rust 1.77.2+</pre></div>
+                <div class="band ok"><b>零自定义 command，前端也没有一处 invoke。</b>SQL 由
+                  <span class="mono">@tauri-apps/plugin-sql</span> 的 JS 侧直发
+                  （<span class="mono">Database.load('sqlite:cache.db')</span> →
+                  <span class="mono">plugin:sql|execute</span>），Rust 只管注册插件、跑 migration、发权限。
+                  <b>要往 Rust 加东西，先问能不能不加</b> —— 加了就得能编译，而现在编不了（见右下）。</div>
+                <div class="band warn"><b>落盘路径没人验证过。</b>插件按 identifier 走，实际应该是
+                  <span class="mono">%AppData%\com.pdw.devtools\cache.db</span>，而
+                  <span class="mono">lib.rs</span> 注释里写的是 PRD 要求的
+                  <span class="mono">%AppData%\DevTools\</span> —— 两者不一致，因为 Rust 侧一次都没跑起来。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="card">
+              <div class="chead"><span class="h">缓存库结构</span>
+                <div class="spacer"></div><span class="who">migration v1</span></div>
+              <div class="cbody tight">
+                <table class="tbl">
+                  <thead><tr><th>表</th><th>存什么</th><th>关键约束</th></tr></thead>
+                  <tbody>
+                    <tr><td class="mono">cached_tables</td><td>表名 / 注释 / Java 类 / 来源</td>
+                      <td class="muted"><span class="mono">table_name</span> UNIQUE，故意不带 data_source</td></tr>
+                    <tr><td class="mono">cached_columns</td><td>字段全属性 + Java 映射</td>
+                      <td class="muted">FK → cached_tables，ON DELETE CASCADE</td></tr>
+                    <tr><td class="mono">cached_foreign_keys</td><td>外键，带可信度</td>
+                      <td class="muted">confidence = constraint / naming，四列联合 UNIQUE</td></tr>
+                    <tr><td class="mono">cache_metadata</td><td>key-value JSON</td>
+                      <td class="muted">模板、最近查询 —— 不值得建表的都塞这</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="cbody stack" style="border-top:1px solid var(--line)">
+                <div class="band">两处对 PRD 6.3 的<b>有意</b>偏差：<b>①</b> 唯一键不带
+                  <span class="mono">data_source</span> —— 前端按表名寻址，允许同名表来自两个库会让
+                  「查 user 表」变成一个有歧义的问题；<b>②</b> 暂不建 FTS5 虚表 —— 50~100 张表在内存里
+                  线性扫描是微秒级，且还没确认打包的 SQLite 开了 fts5 编译选项。</div>
+                <div class="band warn"><b>改表结构只能新增 <span class="mono">Migration{version:2}</span>，
+                  不准改 v1 的 SQL</b> —— 已经建过库的机器不会重跑 v1。而本机缺链接器，动 migration 等于
+                  改了也验证不了，所以<b>新持久化数据一律先考虑塞 <span class="mono">cache_metadata</span></b>，
+                  模板功能就是这么做的。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="split even" style="margin-top:14px">
+          <div class="col">
+            <div class="card">
+              <div class="chead"><span class="h">写代码时的硬规矩</span>
+                <div class="spacer"></div><span class="who">每条都踩过一次</span></div>
+              <div class="cbody stack" style="gap:8px">
+                <div class="band"><b>方言差异只准写在 <span class="mono">dialect.ts</span> 的
+                  <span class="mono">DialectSpec</span> 里。</b>在调用点写
+                  <span class="mono">dialect === 'oracle' ? … : …</span>，同一条规则就有两份，然后只修好一份。</div>
+                <div class="band"><b>拼 WHERE 一律复用
+                  <span class="mono">executable.renderCondition()</span></b>：空值是
+                  <span class="mono">IS NULL</span>，永远不是 <span class="mono">= NULL</span> ——
+                  后者恒为 unknown，查不出、删不掉，还不报错。</div>
+                <div class="band"><b>自动造的值不进 state</b>，只留用户手改过的那几个。存一整份等于埋一个
+                  「表结构变了但值还是旧的」不一致点。</div>
+                <div class="band"><b>props 变化重置 state 用渲染期校正</b>，不用
+                  <span class="mono">useEffect + setState</span>（oxlint 的
+                  <span class="mono">react(set-state-in-effect)</span>，且 effect 版会先用旧值闪一帧）。</div>
+                <div class="band"><b>启动期读数据必须
+                  <span class="mono">await initStore()</span></b>，不能直接
+                  <span class="mono">getStore()</span> —— 初始化完成前它返回的是 MemoryStore，
+                  在 Tauri 里会读到 localStorage 而不是 SQLite。</div>
+                <div class="band"><b>antd 是 6 不是 5</b>：API 改名 + DOM 类名全变。照 v5 写的 Tab 布局规则
+                  曾经一条都没命中、整页跟着滚，而四道闸门全绿 —— 改样式后要在真浏览器里数命中。</div>
+                <div class="band ok">注释写<b>为什么</b>不写做了什么；测试用例名对应一个真踩过的坑。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="card">
+              <div class="chead"><span class="dot"></span><span class="h">验证</span>
+                <div class="spacer"></div><span class="auto">刚跑过</span></div>
+              <div class="cbody stack">
+                <div class="row tight">
+                  <span class="tag ok">✅ pnpm typecheck</span>
+                  <span class="tag ok">✅ pnpm lint</span>
+                  <span class="tag ok">✅ pnpm test · 173</span>
+                  <span class="tag ok">✅ pnpm build · 2.3s</span>
+                </div>
+                <div class="band warn"><b>四道闸门证明不了「生成的 SQL 能跑」。</b>项目里最狠的几个 bug
+                  —— 逗号被行尾注释吃掉、多表列名撞车导致 ResultSet 静默覆盖、注释里的单引号每次往返翻倍
+                  —— 都是四绿之后才发现的。所以另外三件事是硬要求：</div>
+                <div class="row"><span class="tag hi mono">node:sqlite</span>
+                  <span class="hint">DatabaseSync(':memory:') 真执行生成的 DDL / SQL</span></div>
+                <div class="row"><span class="tag hi mono">往返解析</span>
+                  <span class="hint">导出的 DDL 再喂回 parseDdl，断言信息无损</span></div>
+                <div class="row"><span class="tag hi mono">e2e.mjs</span>
+                  <span class="hint">Node 内置 WebSocket 驱动 CDP，无 puppeteer，点真浏览器</span></div>
+                <div class="band">断言要挑<b>能证伪</b>的量：模板那段不是「列表里多了一条」，而是
+                  存 → 改配置让 SQL 变短 → 套用 → 字符数回到存的时候。</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <h2 class="sh">这一轮的取舍</h2>
+        <div class="split">
+          <div class="col">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">能自动就不让你确认</span>
+                <div class="spacer"></div><span class="auto">砍掉的点击</span></div>
+              <div class="cbody stack">
+                <div class="band ok"><b>导入表结构</b>：原来是 粘贴 → 点「解析」→ 看预览 → 点「导入 N 张表」。
+                  现在粘贴一步到位，右边同时是预览和结果，出错用常驻的<b>撤销</b>兜底。</div>
+                <div class="band ok"><b>SQL 生成</b>：本来就没有「生成」按钮。这次连值面板也改成边改边重算，
+                  改一个字符右边就变。</div>
+                <div class="band ok"><b>JSONPath</b>：粘贴时自动格式化，去掉「格式化 / 填示例」两个按钮；
+                  进页面就带着示例 JSON 和一条表达式。</div>
+                <div class="band ok"><b>表结构速查</b>：边打边搜，命中第一名的表<b>直接展开</b>字段表 ——
+                  搜到了还要再点一下才能看，等于白搜一趟。</div>
+                <div class="band ok"><b>正则测试</b>：预设点一下连测试文本一起换，不用自己造样本。</div>
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="card">
+              <div class="chead"><span class="h">哪些地方故意保留了一次确认</span></div>
+              <div class="cbody stack">
+                <div class="band warn"><b>命名推断的外键默认不勾</b>。<span class="mono">xxx_id</span>
+                  推出来的关系可能是错的，默认让它参与 JOIN 等于悄悄生成错 SQL —— 这一次勾选必须由你来点。</div>
+                <div class="band warn"><b>可执行 SQL 上方常驻提醒</b>。值是自动造的，语句能直接跑，
+                  所以「执行前确认它不会打乱现有数据」这句话不能省。</div>
+                <div class="band">分界线：<b>只影响显示的，自动做；会改到数据库的，让你看清楚。</b></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="chead"><span class="h">这些文件在哪</span></div>
+              <div class="cbody stack" style="gap:7px">
+                <div class="row"><span class="tag hi mono">mockup/_theme.css</span><span class="hint">5 套主题 + 全部组件样式</span></div>
+                <div class="row"><span class="tag hi mono">mockup/_shell.js</span><span class="hint">导航 / 主题选择器 / 高亮</span></div>
+                <div class="row"><span class="tag hi mono">mockup/_data.js</span><span class="hint">7 张种子表 + 方言表</span></div>
+                <div class="row"><span class="tag mono">*.html</span><span class="hint">一页一个功能，双击直接看</span></div>
+                <div class="band">都是静态文件，不进 <span class="mono">src/</span>，不参与 vite 构建。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="height:20px"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script>
+const $ = s => document.querySelector(s)
+const { THEMES, sqlHi } = UI
+
+const DEMO = `-- INSERT 插入一条 order（订单表）
+insert into \`order\` (user_id, total, create_time)
+values (1001, 199.00, '2026-08-24 10:30:00');`
+
+$('#tiles').innerHTML = THEMES.map((t, i) => `
+  <div class="tile" data-theme="${t.id}" data-id="${t.id}">
+    <div class="tbg"></div><div class="tglow"></div>
+    <div class="tin">
+      <div class="th">
+        <span class="dot"></span>
+        <span class="nm">${t.label}</span>
+        <div class="spacer" style="flex:1"></div>
+        <span class="no">${i + 1} · ${t.id}</span>
+      </div>
+      <div class="panel">
+        <div class="row tight" style="margin-bottom:9px">
+          <span class="tag ok">✅ 外键约束</span>
+          <span class="tag wr">⚠️ 命名推断</span>
+          <span class="tag pk">PK 自增</span>
+        </div>
+        <div class="row">
+          <div class="seg"><button class="on">Oracle</button><button>MySQL</button><button>PG</button></div>
+        </div>
+        <div class="mini-code">${sqlHi(DEMO)}</div>
+      </div>
+      <div class="row" style="margin-top:10px;gap:8px">
+        <div class="stat acc" style="flex:1"><div class="t">表</div><div class="v">7</div></div>
+        <div class="stat ok" style="flex:1"><div class="t">外键</div><div class="v">3</div></div>
+        <div class="stat warn" style="flex:1"><div class="t">推断</div><div class="v">3</div></div>
+      </div>
+      <div class="hint" style="margin-top:9px;font-size:12px">${t.note}</div>
+      <button class="pick" data-pick="${t.id}">用这套看全部页面 →</button>
+    </div>
+  </div>`).join('')
+
+const PAGES = [
+  ['import.html', '📥', '导入表结构（旧版对照）', '上一版设计：粘贴即入库 + 右上角撤销。保留只为和右边「干净态改版」对照，别照它开发。自动识别方言、并回 comment on / alter table、砍存储子句这些解析逻辑两版相同。',
+    ['粘贴即导入', '常驻撤销', '仅作对照']],
+  ['import-clean.html', '✨', '导入表结构·干净态改版', '改版评审：进页面全空，粘贴前右栏一张卡、一个数字都没有；粘贴后实时出预览和计数，点「导入」给入库结果、可撤销。导入前后三个状态在这页真操作一遍。',
+    ['初始干净态', '粘贴才出数', '导入前/后效果']],
+  ['import-db-src.html', '🗄️', '连库·扫源码导入', '方式二：只读连 MySQL，先拉全量表清单再勾选逐表取字段。方式三：扫项目源码（*.sql / @Entity / Mapper XML）按可信度合并，只有 XML 来源的表标不完整、默认不勾。',
+    ['只读连接', '两步拉取', '来源可信度']],
+  ['db-query.html', '▦', '连库查询·工作台', '打开即进工作台预览：SQL → 勾列 → 条件 → 结果。默认不勾条件。勾条件 / 改操作符重写 WHERE；改值回车再查。',
+    ['勾列+条件', '默认无 WHERE', '结果在下']],
+  ['db-conns.html', '🔌', '我的连接', '给每台库起名收藏。连库查询从列表里选。密码不进列表；测试/本地可记系统凭据。',
+    ['起名收藏', '系统凭据可选', '选了去连库']],
+  ['logfill-chat.html', '🧩', '日志转SQL', '粘一段 MyBatis 日志，把 ? 填回去变成能直接跑的 SQL。对话式的那一套，方言顺序 Oracle 打头。',
+    ['对话式', '参数对照表', '5 种日志格式']],
+  ['schema.html', '🔍', '表结构速查', '边打边搜，7 条匹配规则（表名 / 注释 / 字段 / Java 类 / 拼音首字母），命中第一名直接展开字段表和外键。',
+    ['边打边搜', '拼音首字母', '命中理由标签']],
+  ['sqlgen.html', '📝', 'SQL 生成', '左边配置右边出结果，没有「生成」按钮。单表 CRUD / 多表关联 / MyBatis XML，四种方言，值可以直接改。',
+    ['配置即结果', '可执行填值', 'JOIN 列名带别名']],
+  ['select2update.html', '🔁', 'SELECT转UPDATE', '把查询结果粘回来就出 UPDATE。三种粘贴形状（带表头 / 纯文本按位置对齐 / 单列主键），主键三级识别；值相同走 IN、逐行不同自动降级 CASE WHEN，只把值有变化的行放进 WHERE。',
+    ['粘贴即出语句', '主键三级识别', 'IN / CASE WHEN 自动选']],
+  ['batch-insert.html', '📦', '批量 INSERT', '造测试数据：每个字段独立配生成规则（12 种）、起始ID 连号、逐条 / 多 VALUES / 分批。右栏最上是语句，预览在下面。',
+    ['字段级规则', '随机=可重现', '超 1MB 自动分批']],
+  ['batch-update.html', '✏️', '批量 UPDATE', '三种定位（主键列表 / 条件字段 / WHERE 1=1），SET 走同一套规则；随行变化的值自动走 CASE WHEN。从 SELECT 结果导入仍是旁边那一页。',
+    ['主键列表', '条件字段', 'WHERE 1=1 确认闸']],
+  ['sqlfav.html', '📚', '我的SQL库', '收藏常用 SQL：名称 / 所属表名 / 多标签 / 备注。搜索四路合一（名称、标签、表名、SQL 内容），按最近使用排序，JSON 导入导出。',
+    ['四路合一搜索', '表名自动提取', 'JSON 导入导出']],
+  ['config.html', '⚙️', '配置管理', 'YAML ↔ Properties 一键互转（注释跟着键走），实时校验报行号、出错行标红；内置 Spring 常用配置提示。',
+    ['互转保注释', '校验报行号', '智能提示']],
+  ['regex.html', '🔬', '正则测试', '边写边高亮，12 条预设连测试文本一起给 —— 每段样本里都留了「不该命中」的行。',
+    ['输入即匹配', '分组明细', '零长度保护']],
+  ['jsonpath.html', '🔎', 'JSONPath', '粘贴自动格式化，9 条表达式提示点一下就跑。结果能按路径表看，知道每个值是从哪来的。',
+    ['粘贴即格式化', '路径表', '过滤 / 切片 / 递归']],
+]
+
+function paint() {
+  const cur = UI.theme()
+  // 两个数字一律现算，不手写：新增一页只要往 PAGES 里加一行，标题自己跟上
+  $('#sub').textContent = `${THEMES.length} 套整体科技样式 · ${PAGES.length} 个功能页原型 `
+    + '· 前后端架构 · 全部本地静态文件'
+  $('#curTheme').textContent = '当前：' + THEMES.find(t => t.id === cur).label
+  document.querySelectorAll('.tile').forEach(el => el.classList.toggle('cur', el.dataset.id === cur))
+  $('#pgs').innerHTML = PAGES.map(([href, ic, nm, ds, tags]) => `
+    <a class="pg" href="${href}?t=${cur}">
+      <div class="t"><span>${ic}</span>${nm}</div>
+      <div class="d">${ds}</div>
+      <div class="c">${tags.map(x => `<span class="tag hi">${x}</span>`).join('')}</div>
+    </a>`).join('')
+}
+
+document.querySelectorAll('[data-pick]').forEach(b => {
+  b.onclick = () => { UI.apply(b.dataset.pick); location.href = 'import-clean.html?t=' + b.dataset.pick }
+})
+addEventListener('themechange', paint)
+paint()
+</script>
+</body>
+</html>

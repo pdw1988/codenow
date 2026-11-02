@@ -1,0 +1,519 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>导入表结构 · 码上 CodeNow 原型</title>
+<link rel="stylesheet" href="_theme.css">
+<style>
+  textarea#ddl{ min-height:430px; font-size:12.5px; line-height:1.7 }
+  .tline{ display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+  .tline .tn{ font:600 13.5px/1.3 var(--mono) }
+  .fkline{ display:flex; align-items:center; gap:9px; padding:5px 0; font:12.5px/1.5 var(--mono); flex-wrap:wrap }
+  .fkline .arw{ color:var(--acc); font-size:14px }
+  .flash{ animation:fl .9s ease-out }
+  @keyframes fl{ from{ box-shadow:0 0 0 3px color-mix(in srgb, var(--ok) 45%, transparent) } to{ box-shadow:none } }
+</style>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="import"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">📥 导入表结构</div>
+        <div class="sub">粘进来就入库了 · 没有「解析」和「确认导入」两步</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">粘贴即导入 · 可撤销</span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-in">
+        <div class="split even">
+          <!-- 左：粘贴 -->
+          <div class="col">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead">
+                <span class="dot"></span><span class="h">建表语句</span>
+                <span class="who">Oracle / MySQL / PG</span>
+                <div class="spacer"></div>
+                <span class="tag hi" id="diaTag">—</span>
+              </div>
+              <div class="cbody" style="padding:0">
+                <textarea class="fld" id="ddl" spellcheck="false"
+                  style="border:0;border-radius:0;background:var(--panel2)"
+                  placeholder="把 CREATE TABLE 粘在这里 —— 松开鼠标就已经导好了，不用再点任何按钮"></textarea>
+              </div>
+              <div class="acts">
+                <span class="lbl">换个示例</span>
+                <!-- 方言一律按 _data.js DIALECTS 的顺序：Oracle → MySQL → PG -->
+                <button class="mini" data-eg="oracle">Oracle（PL/SQL 导出）</button>
+                <button class="mini" data-eg="mysql">MySQL</button>
+                <button class="mini" data-eg="">清空</button>
+                <div class="spacer"></div>
+                <span class="hint" id="chars"></span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="chead"><span class="h">这一版砍掉了什么</span></div>
+              <div class="cbody stack" style="gap:8px">
+                <div class="band ok">原来是 <b>粘贴 → 点「解析」→ 看预览 → 点「导入 N 张表」</b>，四步两次点击。
+                  现在 <b>粘贴</b> 一步，右边同时就是预览和结果。</div>
+                <div class="band info">怕导错？右上角常驻 <b>撤销</b>，比事前弹个确认框有用 ——
+                  确认框出现的时候用户还没看到结果，只能盲点「确定」。</div>
+                <div class="band">重名的表直接覆盖，并在那一行标 <b>覆盖</b> 而不是拦一次。</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右：结果 -->
+          <div class="col" id="right">
+            <div id="status"></div>
+
+            <div class="card" id="statCard">
+              <i class="corner br"></i>
+              <div class="chead"><span class="dot"></span><span class="h">解析结果</span>
+                <div class="spacer"></div><span class="who" id="fixWho"></span></div>
+              <div class="cbody stack">
+                <div class="stats" id="stats"></div>
+                <div id="notes" class="stack" style="gap:8px"></div>
+              </div>
+            </div>
+
+            <div class="card" id="tblCard">
+              <div class="chead"><span class="h">表</span><span class="who" id="tblWho"></span>
+                <div class="spacer"></div><span class="auto">第一张已展开</span></div>
+              <div class="cbody" id="tbls"></div>
+            </div>
+
+            <div class="card" id="fkCard">
+              <div class="chead"><span class="h">外键</span>
+                <div class="spacer"></div><span class="who">✅ 真约束 · ⚠️ 命名推断</span></div>
+              <div class="cbody" id="fkList"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script src="_data.js"></script>
+<script>
+const { esc, bindFolds } = UI
+const $ = s => document.querySelector(s)
+const EXISTING = new Set(DATA.tables.map(t => t.name))
+
+const EG = {
+  mysql: `CREATE TABLE \`user\` (
+  \`id\`          BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
+  \`username\`    VARCHAR(50)  NOT NULL COMMENT '用户名',
+  \`password\`    VARCHAR(100) NOT NULL COMMENT '密码(加密)',
+  \`email\`       VARCHAR(100) DEFAULT NULL COMMENT '邮箱',
+  \`status\`      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态 1正常 0禁用',
+  \`create_time\` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (\`id\`),
+  UNIQUE KEY \`uk_username\` (\`username\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+
+CREATE TABLE \`order\` (
+  \`id\`          BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键',
+  \`user_id\`     BIGINT        NOT NULL COMMENT '下单用户',
+  \`order_no\`    VARCHAR(32)   NOT NULL COMMENT '订单号',
+  \`total\`       DECIMAL(12,2) NOT NULL DEFAULT 0.00 COMMENT '订单金额',
+  \`status\`      TINYINT       NOT NULL DEFAULT 0 COMMENT '状态 0待付 1已付 2已发货 3完成',
+  \`create_time\` DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '下单时间',
+  PRIMARY KEY (\`id\`),
+  CONSTRAINT \`fk_order_user\` FOREIGN KEY (\`user_id\`) REFERENCES \`user\` (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单表';
+
+CREATE TABLE \`operation_log\` (
+  \`id\`          BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
+  \`user_id\`     BIGINT       DEFAULT NULL COMMENT '操作人',
+  \`action\`      VARCHAR(60)  NOT NULL COMMENT '操作类型',
+  \`detail\`      VARCHAR(500) DEFAULT NULL COMMENT '详情',
+  \`create_time\` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作日志表';`,
+
+  oracle: `-- PL/SQL Developer 导出的样子：注释是独立语句、主键在 alter table 里、尾巴一堆存储子句
+create table PRODUCT
+(
+  id          NUMBER(19) not null,
+  name        NVARCHAR2(120) not null,
+  price       NUMBER(12,2) default 0 not null,
+  stock       NUMBER(10) default 0 not null,
+  is_publish  NUMBER(1) default 0 not null,
+  remark      LONG RAW,
+  create_time TIMESTAMP(6) WITH TIME ZONE default systimestamp not null
+)
+tablespace USERS
+  pctfree 10
+  initrans 1
+  maxtrans 255
+  storage
+  (
+    initial 64K
+    next 1M
+  );
+comment on table PRODUCT is '商品表';
+comment on column PRODUCT.id is '主键';
+comment on column PRODUCT.name is '商品名称';
+comment on column PRODUCT.price is '售价';
+comment on column PRODUCT.stock is '库存';
+comment on column PRODUCT.is_publish is '发布状态 0未发布 1已发布 9失效';
+comment on column PRODUCT.remark is '备注（二进制）';
+comment on column PRODUCT.create_time is '上架时间';
+alter table PRODUCT add constraint PK_PRODUCT primary key (ID);
+
+create table PRODUCT_TAG
+(
+  product_id NUMBER(19) not null,
+  tag_code   VARCHAR2(40) not null
+)
+tablespace USERS;
+comment on table PRODUCT_TAG is '商品标签表';
+comment on column PRODUCT_TAG.product_id is '商品';
+comment on column PRODUCT_TAG.tag_code is '标签编码';
+alter table PRODUCT_TAG add constraint PK_PRODUCT_TAG primary key (PRODUCT_ID, TAG_CODE);
+alter table PRODUCT_TAG add constraint FK_PT_PRODUCT foreign key (PRODUCT_ID) references PRODUCT (ID);`,
+}
+
+/* ================= 解析 =================
+   这是原型的简化版，规则照 lib/oracleDdl.ts + lib/ddlParser.ts 的意思写。
+   几条不能省的：
+   - 一切扫描都得认引号。`default 'NUMBER'` 里的 NUMBER 是用户的数据，不是类型词。
+   - 存储子句按白名单砍（tablespace/pctfree/...），不能「砍掉右括号后面的东西」——
+     MySQL 的 ENGINE=InnoDB COMMENT='用户表' 也在右括号后面，一律砍就把表注释弄丢了。
+   - 记下用户原样写的类型文本并显示它。显示成规整化后的 DECIMAL(25)，
+     用户点一次「导出 DDL」拿去执行就把人家 Oracle 表的字段类型改了。
+   ============================================================ */
+
+/** 去掉注释，但字符串里的 -- 和 /* 不算注释 */
+function stripComments(src) {
+  let out = '', q = null
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i], nx = src[i + 1]
+    if (q) { out += ch; if (ch === q) q = null; continue }
+    if (ch === "'" || ch === '"' || ch === '`') { q = ch; out += ch; continue }
+    if (ch === '-' && nx === '-') { while (i < src.length && src[i] !== '\n') i++; out += '\n'; continue }
+    if (ch === '/' && nx === '*') { i += 2; while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++; i++; continue }
+    out += ch
+  }
+  return out
+}
+
+/** 按分隔符切，只在括号深度 0 且不在引号里时切 */
+function splitTop(src, sep) {
+  const out = []; let cur = '', d = 0, q = null
+  for (const ch of src) {
+    if (q) { cur += ch; if (ch === q) q = null; continue }
+    if (ch === "'" || ch === '"' || ch === '`') { q = ch; cur += ch; continue }
+    if (ch === '(') d++
+    else if (ch === ')') d--
+    else if (ch === sep && d === 0) { out.push(cur); cur = ''; continue }
+    cur += ch
+  }
+  if (cur.trim()) out.push(cur)
+  return out
+}
+
+const unq = s => (s || '').replace(/^[`"\[]|[`"\]]$/g, '')
+const uns = s => (s || '').replace(/^'|'$/g, '').replace(/''/g, "'")
+const camel = s => s.toLowerCase().replace(/_([a-z0-9])/g, (m, x) => x.toUpperCase())
+
+// 多词类型的尾词白名单：只截第一个词等于把 LONG RAW 记成 LONG
+const TAIL = /^(?:raw|precision|varying|unsigned|zerofill|byte|with|without|time|zone|local|to|second|day|month|year|minute|hour|set|text)$/i
+// 存储子句白名单，遇到就把后面全丢掉
+const STORAGE = /\b(tablespace|pctfree|pctused|initrans|maxtrans|storage|logging|nologging|nocompress|cache|nocache|monitoring|parallel|noparallel|lob\s*\()\b/i
+
+function javaType(type, dialectOracle) {
+  const T = type.toUpperCase()
+  const p = /\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\)/.exec(T)
+  const prec = p ? +p[1] : null, scale = p && p[2] !== undefined ? +p[2] : 0
+  if (/^(NUMBER|DECIMAL|NUMERIC)/.test(T)) {
+    if (scale > 0) return 'BigDecimal'
+    // NUMBER(1) 不猜 Boolean：用户表里 is_publish 的取值是 0/1/9，猜成 Boolean 就表达不出 9。
+    // NUMBER(25) 不给 Long：25 位超出 long 的 19 位，溢出不报错，数字直接变成别的数。
+    if (prec === null) return 'BigDecimal'
+    if (prec <= 9) return 'Integer'
+    if (prec <= 18) return 'Long'
+    return 'BigDecimal'
+  }
+  if (/^TINYINT\(1\)/.test(T)) return 'Boolean'   // MySQL 的社区惯例，Oracle 没有
+  if (/^(BIGINT)/.test(T)) return 'Long'
+  if (/^(INT|INTEGER|SMALLINT|TINYINT|MEDIUMINT)/.test(T)) return 'Integer'
+  if (/^(FLOAT|DOUBLE|REAL|BINARY_DOUBLE)/.test(T)) return 'Double'
+  if (/^(BOOLEAN|BOOL|BIT)/.test(T)) return 'Boolean'
+  if (/^(DATETIME|TIMESTAMP)/.test(T)) return 'LocalDateTime'
+  // Oracle 的 DATE 带时分秒，MySQL 的 DATE 不带。拿这一条去猜错就是把日期字段悄悄搞错
+  if (/^DATE/.test(T)) return dialectOracle ? 'LocalDateTime' : 'LocalDate'
+  if (/^TIME/.test(T)) return 'LocalTime'
+  if (/(BLOB|RAW|BYTEA|BINARY)/.test(T)) return 'byte[]'
+  return 'String'
+}
+
+function parseColumn(part, oracle) {
+  const m = /^\s*[`"\[]?([A-Za-z_][\w$#]*)[`"\]]?\s+([\s\S]+)$/.exec(part)
+  if (!m) return null
+  const name = unq(m[1]).toLowerCase()
+  let rest = m[2].trim()
+  const tm = /^([A-Za-z_][\w$#]*)\s*(\([^)]*\))?/.exec(rest)
+  if (!tm) return null
+  let type = tm[1].toUpperCase() + (tm[2] ? tm[2].replace(/\s+/g, '') : '')
+  rest = rest.slice(tm[0].length).trim()
+  for (;;) {
+    const w = /^([A-Za-z_]+)\s*(\([^)]*\))?/.exec(rest)
+    if (!w || !TAIL.test(w[1])) break
+    type += ' ' + w[1].toUpperCase() + (w[2] ? w[2].replace(/\s+/g, '') : '')
+    rest = rest.slice(w[0].length).trim()
+  }
+  const dm = /\bdefault\s+((?:'(?:[^']|'')*')|[\w$.:+-]+(?:\s*\([^)]*\))?)/i.exec(rest)
+  const cm = /\bcomment\s+('(?:[^']|'')*')/i.exec(rest)
+  const def = dm ? dm[1].trim() : ''
+  return {
+    n: name, t: type, j: javaType(type, oracle),
+    nn: /\bnot\s+null\b/i.test(rest) ? 1 : 0,
+    pk: /\bprimary\s+key\b/i.test(rest) ? 1 : 0,
+    ai: /\b(auto_increment|generated\s+(?:always|by\s+default)\s+as\s+identity)\b/i.test(rest) ? 1 : 0,
+    d: /^null$/i.test(def) ? '' : def,
+    c: cm ? uns(cm[1]) : '',
+  }
+}
+
+function parse(src) {
+  const oracle = /\b(varchar2|number\s*\(|comment\s+on\s+(table|column)|tablespace|nvarchar2|systimestamp)\b/i.test(src)
+  const stmts = splitTop(stripComments(src), ';').map(s => s.trim()).filter(Boolean)
+  const tables = [], fks = [], fails = [], fixes = new Set()
+  const byName = new Map()
+
+  for (const st of stmts) {
+    const ct = /^create\s+(?:global\s+temporary\s+)?table\s+(?:if\s+not\s+exists\s+)?([`"\[]?[\w$#.]+[`"\]]?)\s*\(([\s\S]*)$/i.exec(st)
+    if (ct) {
+      const name = unq(ct[1]).split('.').pop().toLowerCase()
+      // 取到跟开括号配对的那个右括号，后面的是尾巴（MySQL 的 ENGINE=/COMMENT= 或 Oracle 的存储子句）
+      let d = 1, i = 0, body = '', q = null
+      const raw = ct[2]
+      for (; i < raw.length; i++) {
+        const ch = raw[i]
+        if (q) { body += ch; if (ch === q) q = null; continue }
+        if (ch === "'" || ch === '"' || ch === '`') { q = ch; body += ch; continue }
+        if (ch === '(') d++
+        if (ch === ')') { d--; if (!d) break }
+        body += ch
+      }
+      const tail = raw.slice(i + 1)
+      const tc = /\bcomment\s*=?\s*('(?:[^']|'')*')/i.exec(tail)
+      if (STORAGE.test(tail)) fixes.add('砍掉 Oracle 存储子句（tablespace / pctfree / storage）')
+
+      const cols = [], pk = []
+      for (const part0 of splitTop(body, ',')) {
+        const part = part0.trim()
+        if (!part) continue
+        const pkm = /^primary\s+key\s*\(([^)]*)\)/i.exec(part)
+        if (pkm) { pkm[1].split(',').forEach(x => pk.push(unq(x.trim()).toLowerCase())); continue }
+        const fkm = /^(?:constraint\s+([`"\[]?[\w$#]+[`"\]]?)\s+)?foreign\s+key\s*\(([^)]*)\)\s*references\s+([`"\[]?[\w$#.]+[`"\]]?)\s*\(([^)]*)\)/i.exec(part)
+        if (fkm) {
+          fks.push({ name: unq(fkm[1] || '').toLowerCase(), from: name, fromCol: unq(fkm[2].trim()).toLowerCase(),
+            to: unq(fkm[3]).split('.').pop().toLowerCase(), toCol: unq(fkm[4].trim()).toLowerCase(), conf: 'constraint' })
+          continue
+        }
+        if (/^(unique|key|index|check|constraint|fulltext|spatial)\b/i.test(part)) continue
+        const c = parseColumn(part, oracle)
+        if (c) { cols.push(c); if (c.pk) pk.push(c.n) } else fails.push(part.slice(0, 60))
+      }
+      if (!cols.length) { fails.push(`${name}：一个字段都没解析出来`); continue }
+      cols.forEach(c => { c.pk = pk.includes(c.n) ? 1 : 0 })
+      if (oracle) fixes.add('Oracle 类型词换成可解析的写法，界面显示的仍是你原样写的类型')
+      const t = { name, comment: tc ? uns(tc[1]) : '', javaClass: name.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(''), columns: cols }
+      tables.push(t); byName.set(name, t)
+      continue
+    }
+
+    // Oracle：注释是独立语句
+    let m = /^comment\s+on\s+table\s+([`"\[]?[\w$#.]+[`"\]]?)\s+is\s+('(?:[^']|'')*')/i.exec(st)
+    if (m) {
+      const t = byName.get(unq(m[1]).split('.').pop().toLowerCase())
+      if (t) { t.comment = uns(m[2]); fixes.add('把独立的 comment on 语句并回字段注释') }
+      continue
+    }
+    m = /^comment\s+on\s+column\s+([`"\[]?[\w$#]+[`"\]]?)\.([`"\[]?[\w$#]+[`"\]]?)\s+is\s+('(?:[^']|'')*')/i.exec(st)
+    if (m) {
+      const t = byName.get(unq(m[1]).toLowerCase())
+      const c = t?.columns.find(x => x.n === unq(m[2]).toLowerCase())
+      if (c) { c.c = uns(m[3]); fixes.add('把独立的 comment on 语句并回字段注释') }
+      continue
+    }
+    // Oracle：主键 / 外键在独立的 alter table 里
+    m = /^alter\s+table\s+([`"\[]?[\w$#.]+[`"\]]?)\s+add\s+(?:constraint\s+([`"\[]?[\w$#]+[`"\]]?)\s+)?primary\s+key\s*\(([^)]*)\)/i.exec(st)
+    if (m) {
+      const t = byName.get(unq(m[1]).split('.').pop().toLowerCase())
+      if (t) {
+        const names = m[3].split(',').map(x => unq(x.trim()).toLowerCase())
+        t.columns.forEach(c => { if (names.includes(c.n)) c.pk = 1 })
+        fixes.add('把独立 alter table 里的主键并回表定义')
+      }
+      continue
+    }
+    m = /^alter\s+table\s+([`"\[]?[\w$#.]+[`"\]]?)\s+add\s+(?:constraint\s+([`"\[]?[\w$#]+[`"\]]?)\s+)?foreign\s+key\s*\(([^)]*)\)\s*references\s+([`"\[]?[\w$#.]+[`"\]]?)\s*\(([^)]*)\)/i.exec(st)
+    if (m) {
+      fks.push({ name: unq(m[2] || '').toLowerCase(), from: unq(m[1]).split('.').pop().toLowerCase(),
+        fromCol: unq(m[3].trim()).toLowerCase(), to: unq(m[4]).split('.').pop().toLowerCase(),
+        toCol: unq(m[5].trim()).toLowerCase(), conf: 'constraint' })
+      fixes.add('把独立 alter table 里的外键并回表定义')
+      continue
+    }
+    if (/^(create|alter|drop|insert|set|use|grant|prompt)\b/i.test(st)) continue
+    fails.push(st.slice(0, 60))
+  }
+
+  /* 命名推断：xxx_id 且 xxx 是已知表。这类关系默认不勾，
+     推断可能是错的，默认参与 JOIN 等于悄悄生成错 SQL。 */
+  const known = new Map([...byName].map(([k, v]) => [k, v]))
+  DATA.tables.forEach(t => { if (!known.has(t.name)) known.set(t.name, t) })
+  const hasFk = new Set(fks.map(f => f.from + '.' + f.fromCol))
+  for (const t of tables) {
+    for (const c of t.columns) {
+      const mm = /^(\w+)_id$/.exec(c.n)
+      if (!mm || hasFk.has(t.name + '.' + c.n)) continue
+      const target = known.get(mm[1]) || known.get(mm[1] + 's')
+      if (!target || target.name === t.name) continue
+      const tpk = target.columns.find(x => x.pk)
+      if (!tpk) continue
+      fks.push({ name: '', from: t.name, fromCol: c.n, to: target.name, toCol: tpk.n, conf: 'naming' })
+    }
+  }
+
+  return { oracle, tables, fks, fails, fixes: [...fixes] }
+}
+
+/* ================= 渲染 ================= */
+let undoSnapshot = null
+
+function render(flash) {
+  const src = $('#ddl').value
+  $('#chars').textContent = src ? `${src.length} 字符 · ${src.split('\n').length} 行` : ''
+
+  if (!src.trim()) {
+    $('#diaTag').textContent = '等着粘贴'
+    $('#status').innerHTML = '<div class="band">粘一段建表语句进来 —— 右边会同时出现预览和「已导入」。</div>'
+    ;['#statCard', '#tblCard', '#fkCard'].forEach(s => { $(s).style.display = 'none' })
+    return
+  }
+
+  const r = parse(src)
+  ;['#statCard', '#tblCard', '#fkCard'].forEach(s => { $(s).style.display = '' })
+  $('#diaTag').textContent = (r.oracle ? 'Oracle' : 'MySQL / PG') + ' · 自动识别'
+
+  const nCols = r.tables.reduce((a, t) => a + t.columns.length, 0)
+  const nCon = r.fks.filter(f => f.conf === 'constraint').length
+  const nNam = r.fks.length - nCon
+  const covered = r.tables.filter(t => EXISTING.has(t.name))
+
+  if (!r.tables.length) {
+    $('#status').innerHTML = `<div class="band err"><b>没解析出任何 CREATE TABLE</b> —— 检查一下是不是只粘到了一半。
+      ${r.fails.length ? '看不懂的片段：<span class="mono">' + esc(r.fails[0]) + '</span>' : ''}</div>`
+  } else {
+    $('#status').innerHTML = `<div class="band ok ${flash ? 'flash' : ''}" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <b>✓ 已导入 ${r.tables.length} 张表 · ${nCols} 个字段 · ${nCon} 条外键</b>
+      ${covered.length ? `<span class="tag wr">覆盖了 ${covered.map(t => t.name).join('、')}</span>` : ''}
+      <div class="spacer" style="flex:1"></div>
+      <button class="mini" id="undo">↶ 撤销这次导入</button></div>`
+    $('#undo').onclick = () => {
+      undoSnapshot = $('#ddl').value
+      $('#ddl').value = ''
+      render()
+      $('#status').innerHTML = `<div class="band warn" style="display:flex;align-items:center;gap:10px">
+        <b>已撤销</b> 缓存里还是原来的 ${DATA.tables.length} 张表
+        <div class="spacer" style="flex:1"></div>
+        <button class="mini" id="redo">↷ 恢复</button></div>`
+      $('#redo').onclick = () => { $('#ddl').value = undoSnapshot; render(true) }
+    }
+  }
+
+  $('#stats').innerHTML = [
+    ['表', r.tables.length, 'acc'], ['字段', nCols, ''],
+    ['外键约束', nCon, 'ok'], ['命名推断', nNam, nNam ? 'warn' : ''],
+  ].map(([t, v, k]) => `<div class="stat ${k}"><div class="t">${t}</div><div class="v">${v}</div></div>`).join('')
+
+  $('#fixWho').textContent = r.fixes.length ? `自动修了 ${r.fixes.length} 处` : ''
+  const notes = []
+  r.fixes.forEach(f => notes.push(`<div class="band info">${esc(f)}</div>`))
+  if (nNam) notes.push(`<div class="band warn"><b>${nNam} 条关系是从 <span class="mono">xxx_id</span> 命名推断的</b>，
+    不是真外键 —— 生成 JOIN 时默认不勾，导出 DDL 时也不会输出。</div>`)
+  if (r.fails.length) notes.push(`<div class="band err">有 ${r.fails.length} 段没看懂，已跳过：
+    <span class="mono">${esc(r.fails.slice(0, 2).join(' / '))}</span></div>`)
+  $('#notes').innerHTML = notes.join('')
+
+  $('#tblWho').textContent = `${r.tables.length} 张`
+  $('#tbls').innerHTML = r.tables.map((t, i) => `
+    <div class="fold ${i === 0 ? 'on' : ''}">
+      <div class="fold-h">
+        <span class="caret">▶</span>
+        <div class="tline">
+          <span class="tn">${esc(t.name)}</span>
+          <span class="hint">${esc(t.comment || '（没有表注释）')}</span>
+        </div>
+        <div class="spacer" style="flex:1"></div>
+        <span class="tag">${t.columns.length} 字段</span>
+        <span class="tag">${esc(t.javaClass)}.java</span>
+        <span class="tag ${EXISTING.has(t.name) ? 'wr' : 'ok'}">${EXISTING.has(t.name) ? '覆盖' : '新增'}</span>
+      </div>
+      <div class="fold-b" style="padding:0">
+        <div class="scroll"><table class="tbl">
+          <thead><tr><th style="width:150px">字段</th><th style="width:180px">你写的类型</th>
+            <th style="width:76px">主键</th><th style="width:66px">必填</th>
+            <th style="width:140px">默认值</th><th>注释</th><th style="width:200px">Java 映射</th></tr></thead>
+          <tbody>${t.columns.map(c => `<tr>
+            <td class="mono">${esc(c.n)}</td>
+            <td class="mono muted">${esc(c.t)}</td>
+            <td>${c.pk ? `<span class="tag pk">PK${c.ai ? ' 自增' : ''}</span>` : ''}</td>
+            <td>${c.nn ? '<span class="tag">NOT NULL</span>' : '<span class="muted">—</span>'}</td>
+            <td class="mono muted">${c.d ? esc(c.d) : '—'}</td>
+            <td>${c.c ? esc(c.c) : '<span class="muted">—</span>'}</td>
+            <td class="mono muted">${esc(c.j)} ${esc(camel(c.n))}</td></tr>`).join('')}</tbody>
+        </table></div>
+      </div>
+    </div>`).join('')
+  bindFolds($('#tbls'))
+
+  $('#fkCard').style.display = r.fks.length ? '' : 'none'
+  $('#fkList').innerHTML = r.fks.map(f => `<div class="fkline">
+      <span>${esc(f.from)}.${esc(f.fromCol)}</span><span class="arw">→</span>
+      <span>${esc(f.to)}.${esc(f.toCol)}</span>
+      ${f.conf === 'constraint' ? `<span class="tag ok">✅ 外键约束${f.name ? ' ' + esc(f.name) : ''}</span>`
+      : '<span class="tag wr">⚠️ 命名推断 · 默认不参与 JOIN</span>'}
+    </div>`).join('')
+}
+
+/* 真实的 onPaste 里 textarea.value 还是旧的，得从 clipboardData 读 —— 这条只有真浏览器验得出来。
+   原型里两条路都留着：paste 用 clipboardData 抢先算一次，普通输入走 input 防抖。 */
+$('#ddl').addEventListener('paste', e => {
+  const txt = e.clipboardData?.getData('text')
+  if (!txt) return
+  e.preventDefault()
+  const el = $('#ddl'), s = el.selectionStart, t = el.selectionEnd
+  el.value = el.value.slice(0, s) + txt + el.value.slice(t)
+  el.selectionStart = el.selectionEnd = s + txt.length
+  render(true)
+})
+let timer
+$('#ddl').oninput = () => { clearTimeout(timer); timer = setTimeout(() => render(), 140) }
+document.querySelectorAll('[data-eg]').forEach(b => {
+  b.onclick = () => { $('#ddl').value = EG[b.dataset.eg] || ''; render(!!b.dataset.eg) }
+})
+
+// 进页面就已经有结果，不用先点「填示例」
+$('#ddl').value = EG.mysql
+render()
+</script>
+</body>
+</html>

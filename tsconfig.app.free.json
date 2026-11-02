@@ -1,0 +1,13 @@
+{
+  /* 开源版类型检查：不带 pro/，@pro 指到占位 src/pro-stub */
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.free.tsbuildinfo",
+    "paths": {
+      "@app/*": ["./src/*"],
+      "@pro": ["./src/pro-stub/index.ts"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}

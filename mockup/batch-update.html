@@ -1,0 +1,155 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>批量 UPDATE · 码上 CodeNow 原型</title>
+<link rel="stylesheet" href="_theme.css">
+</head>
+<body data-batch="update">
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="batch-upd"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">✏️ 批量 UPDATE</div>
+        <div class="sub">按主键 / 条件 / 全表改数 · SET 走同一套字段规则</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">配置即时生成</span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-in">
+        <div class="split">
+          <div class="col">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">① 选表和方言</span>
+                <span class="who">造新行请用「批量 INSERT」</span></div>
+              <div class="cbody stack">
+                <div>
+                  <div class="lbl" style="margin-bottom:5px">当前表</div>
+                  <select class="fld" id="tblSel"></select>
+                </div>
+                <div class="row">
+                  <span class="lbl">方言</span>
+                  <div class="seg" id="diaSeg"></div>
+                </div>
+                <div>
+                  <div class="lbl" style="margin-bottom:5px">定位方式（改哪些行）</div>
+                  <div class="seg" id="locSeg" style="width:100%">
+                    <button data-v="pk">按主键列表</button>
+                    <button data-v="cond">按条件字段</button>
+                    <button data-v="fixed" title="WHERE 1=1，全表更新（慎用）">按固定条件</button>
+                    <button data-v="src" title="已有完整原型，这里只留入口">从SELECT结果导入</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card" id="pkCard">
+              <i class="corner br"></i>
+              <div class="chead"><span class="h">② 主键列表</span>
+                <span class="who">范围 / 列表 / 手动混着来</span></div>
+              <div class="cbody stack">
+                <textarea class="fld" id="pkPaste" rows="5" style="resize:vertical;font:12.5px/1.55 var(--mono)"
+                  placeholder="1-100&#10;1001, 1005，1009;1013"></textarea>
+                <div class="hint">范围写法 <b>1-100</b> 直接展开；逗号/空格/分号/换行分隔都行，保序去重</div>
+                <div class="row">
+                  <span class="lbl">输出格式</span>
+                  <div class="seg" id="upFmtSeg">
+                    <button data-v="each" title="每个主键一条 UPDATE">逐条 UPDATE</button>
+                    <button data-v="case" title="CASE id WHEN … THEN … 一条更新一批">CASE WHEN</button>
+                  </div>
+                </div>
+                <div class="row">
+                  <span class="lbl">批量大小</span>
+                  <input class="fld" id="upBatchInp" type="number" min="1" max="500" value="20" style="width:80px">
+                  <span class="hint" id="upBatchHint"></span>
+                </div>
+                <div class="pstat" id="pkStat"></div>
+              </div>
+            </div>
+
+            <div class="card" id="condCard" hidden>
+              <i class="corner tl"></i>
+              <div class="chead"><span class="h">② WHERE 条件字段</span>
+                <span class="who">至少勾一个，否则不生成</span></div>
+              <div class="cbody" id="condList"></div>
+            </div>
+
+            <div class="card" id="fixedCard" hidden>
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">② 按固定条件 = WHERE 1=1</span>
+                <span class="who">全表更新 · 慎用</span></div>
+              <div class="cbody stack">
+                <div class="band err"><b>这个定位不带任何过滤：</b>语句会长成 <code>UPDATE … SET … WHERE 1=1</code>，
+                  这张表的<b>每一行</b>都会被改成同一批值。</div>
+                <label class="cb"><input type="checkbox" id="fixedOkCb">我确认要更新这张表的全部行</label>
+              </div>
+            </div>
+
+            <div class="card" id="srcCard" hidden>
+              <i class="corner tl"></i>
+              <div class="chead"><span class="h">② 从SELECT结果导入</span></div>
+              <div class="cbody stack">
+                <div class="band info"><b>这个定位已经单独成页：</b>粘贴查询结果 → 自动认主键 → 值相同走 IN、不同走 CASE WHEN。</div>
+                <a href="select2update.html" style="font-size:13px;color:var(--acc);text-decoration:none">打开 SELECT转UPDATE →</a>
+              </div>
+            </div>
+
+            <div class="card" id="setCard">
+              <i class="corner br"></i>
+              <div class="chead"><span class="h">③ SET 字段与新值</span>
+                <span class="who">勾选要改的列</span></div>
+              <div class="cbody stack">
+                <div id="setRules"></div>
+                <div class="band info" id="varyHint" hidden><b>提示：</b>模板/随机类规则按行号出值——
+                  「条件字段」「固定条件」一条语句影响多行，只会取第 1 行的值；要每行不同请用主键列表。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">生成结果</span>
+                <span class="who" id="statLbl"></span></div>
+              <div class="cbody stack">
+                <div class="band info" id="warn" hidden></div>
+                <div class="code">
+                  <div class="code-bar">
+                    <span class="fn" id="fnName"></span>
+                    <span class="lbl" id="codeMeta"></span>
+                    <div class="spacer"></div>
+                    <button class="mini" id="dlBtn">下载</button>
+                    <button class="mini" id="cpBtn">复制</button>
+                  </div>
+                  <pre id="sqlOut"></pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <i class="corner br"></i>
+              <div class="chead"><span class="h" id="pvTitle">预览</span>
+                <span class="who" id="pvLbl"></span></div>
+              <div class="cbody" id="preview"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script src="_data.js"></script>
+<script src="_batch.js"></script>
+</body>
+</html>

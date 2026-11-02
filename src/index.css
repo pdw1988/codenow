@@ -1,0 +1,162 @@
+/**
+ * 只放两类东西：
+ *   1. 真应用独有、原型里没有的（#root、antd 浮层的桥接）
+ *   2. 旧代码还在引用的 --dt-* 变量，映射到主题变量上
+ *
+ * **外观一律去 `mockup/_theme.css` 加**，那里是唯一的设计系统。
+ * 在这里写颜色/字号意味着 5 套主题里有 4 套是错的。
+ */
+
+:root {
+  /* 旧组件里散落着 var(--dt-mono) 这类写法（改造中，逐页替换）。
+     映射过去而不是留着两套色值，这样没改到的地方也跟着主题走，不会花。 */
+  --dt-mono: var(--mono);
+  --dt-border: var(--line);
+  --dt-header-bg: var(--bg2);
+}
+
+#root {
+  height: 100%;
+}
+
+/* antd 只剩浮层类组件（Modal / Popconfirm / message / Tooltip / 标签输入）。
+   它们不读主题变量，但至少让容器贴住主题的面板色和描边。 */
+.ant-modal-content,
+.ant-popover-inner,
+.ant-select-dropdown {
+  background: var(--panel) !important;
+  border: 1px solid var(--line2);
+}
+
+.ant-modal-header {
+  background: transparent !important;
+}
+
+.ant-modal-title {
+  color: var(--txt) !important;
+}
+
+/* 编辑表结构：贴顶、吃满视口。默认 top:100px 会把增量 DDL / 底栏裁出窗口。
+   antd 6 面板类名是 container，v5 是 content，两条都写以免升级漏。 */
+.ant-modal.dlg-tall {
+  top: 12px !important;
+  padding-bottom: 12px;
+  max-height: calc(100vh - 24px);
+}
+.dlg-tall-box,
+.ant-modal.dlg-tall .ant-modal-container,
+.ant-modal.dlg-tall .ant-modal-content {
+  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ant-modal.dlg-tall .ant-modal-header,
+.dlg-tall-box > .ant-modal-header {
+  flex: none;
+}
+.dlg-tall-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.dlg-tall-body > .stack {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.dlg-tall-body > .stack > .upd-notes {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.dlg-tall-body > .acts {
+  flex: none;
+}
+.tedit-cols {
+  flex: 1 1 auto;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tedit-cols > .scroll {
+  flex: 1 1 auto;
+  max-height: none;
+}
+
+/* App 的 toast 默认叠在 #root 里。Modal portal 到 body 且 z-index:1000，
+   toast 会被挡在弹窗后面——点了执行只出一句 warning 时看起来像没反应。 */
+.ant-message {
+  z-index: 4000;
+}
+
+/* 模板列表：手写的，因为 antd 6 把 List 标记为废弃 */
+.dt-template-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.dt-template-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.dt-template-item + .dt-template-item {
+  border-top: 1px solid var(--line);
+}
+
+/* 左侧导航的一级分组可以收起：「码上查」12 条全展开时「码上写」「码上测」被顶出
+   视口。开关绝对定位在组标题右侧 —— 挤进 flex 会让图标不再居中，rail-slim
+   （连库已连接的 60px 图标栏）下尤其明显。标 .nav 前缀是因为设计系统里
+   `.nav button` 已经管了这些按钮的外观，这里只补位置和 hover。 */
+.navtoprow {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.navtoprow .navtop {
+  flex: 1;
+  min-width: 0;
+}
+
+.navfold {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  appearance: none;
+  background: none;
+  border: 0;
+  border-radius: var(--r2);
+  color: var(--dimmer);
+  font: 11px/1 var(--mono);
+  cursor: pointer;
+}
+
+.navfold:hover {
+  color: var(--txt);
+  background: color-mix(in srgb, var(--acc) 14%, transparent);
+}
+
+/* 许可台独立页没有左侧导航。只挂在 /__license，主应用不会加这个 class。 */
+.app.lic-admin {
+  grid-template-columns: 1fr;
+}
+
+/* 签发许可是 <a class="mini">：桌面 WebView 拦 window.open，必须真跳转。 */
+a.mini {
+  display: inline-block;
+  text-decoration: none;
+}

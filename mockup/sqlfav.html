@@ -1,0 +1,524 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>我的SQL库 · 码上 CodeNow 原型</title>
+<link rel="stylesheet" href="_theme.css">
+<style>
+  /* 收藏条目卡：名称行 + 标签行 + 折叠预览，对应 §6.3 左侧列表的样子 */
+  .fav{ border:1px solid var(--line); border-radius:var(--r2); padding:9px 12px; cursor:pointer }
+  .fav+.fav{ margin-top:8px }
+  .fav:hover{ border-color:var(--line2); background:color-mix(in srgb, var(--acc) 5%, transparent) }
+  .fav.sel{ border-color:var(--acc); background:color-mix(in srgb, var(--acc) 9%, transparent) }
+  .fav .fr{ display:flex; align-items:center; gap:8px }
+  .fav .fnm{ font-weight:700; font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .fav pre{ margin:6px 0 0; font:12px/1.55 var(--mono); white-space:pre-wrap; word-break:break-all;
+            max-height:84px; overflow:hidden; color:var(--dim) }
+  /* 标签圆片：§6.5 按标签筛选的载体 */
+  .chip{ font-size:12px; padding:4px 11px; border-radius:999px; border:1px solid var(--line);
+         cursor:pointer; color:var(--dimmer); background:none }
+  .chip:hover{ color:var(--txt); border-color:var(--line2) }
+  .chip.on{ color:var(--acc-ink); background:linear-gradient(180deg, var(--acc), var(--acc2));
+            border-color:var(--acc); font-weight:700 }
+  mark{ background:color-mix(in srgb, var(--warn) 50%, transparent); color:inherit;
+        padding:0 1px; border-radius:2px }
+</style>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="sqlfav"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">📚 我的SQL库</div>
+        <div class="sub">PRD v6.3 §6.1~6.9 · MVP#12 · P0 · SQL收藏夹</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">验收线：「收藏SQL → 搜索到 → 一键复制，全程3秒」· 存的是 SQL 本身，§4.13 模板存的是生成器配置，两回事</span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-in">
+        <div class="split">
+          <!-- 左：收藏对话框（§6.4）+ 导入导出（§6.6） -->
+          <div class="col">
+            <div class="card sec">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h" id="formTitle">⭐ 新建收藏</span></div>
+              <div class="cbody stack">
+                <input class="fld" id="fName" placeholder="SQL名称 *（必填）">
+                <div class="row">
+                  <span class="lbl">所属表名</span>
+                  <input class="fld" id="fTbls" style="flex:1" placeholder="逗号分隔，如 user,order">
+                  <button class="mini" id="btnDetect" title="从 SQL 里抓 FROM/JOIN/UPDATE/INTO 后面的表名（§6.7 自动识别）">自动识别</button>
+                </div>
+                <div>
+                  <input class="fld" id="fTags" style="width:100%" placeholder="标签（可选，逗号分隔，如 订单模块,报表）">
+                  <div id="tagQuick" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
+                </div>
+                <textarea class="fld" id="fSql" rows="7" style="resize:vertical;font:12.5px/1.55 var(--mono)"
+                  placeholder="SQL内容 *（从生成器点「收藏」过来会自动带入；MyBatis XML 片段也能收）"></textarea>
+                <input class="fld" id="fRemark" placeholder="备注（可选，如 用于订单列表页，按时间倒序）">
+                <div class="row">
+                  <button class="mini" id="fSave" style="font-weight:700">保存</button>
+                  <button class="mini" id="fCancel" hidden>取消编辑</button>
+                  <div class="spacer"></div>
+                  <span class="hint" id="fHint"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card sec">
+              <i class="corner br"></i>
+              <div class="chead"><span class="h">导入导出备份</span><span class="who">§6.6 · 本地工具没云同步，换机全靠它</span></div>
+              <div class="cbody stack">
+                <div class="row">
+                  <button class="mini" id="exportBtn">📥 导出全部为 JSON</button>
+                  <button class="mini" id="importBtn">📤 从 JSON 导入</button>
+                  <input type="file" id="importFile" accept=".json,application/json" hidden>
+                </div>
+                <div class="hint" id="ioHint">导入按「名称+SQL 都相同」去重，其余追加；坏行跳过并计数，不中断。</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右：搜索列表（§6.3 左侧 / §6.5）+ 详情（§6.3 右侧） -->
+          <div class="col">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">搜索与筛选</span>
+                <span class="who" id="listLbl"></span></div>
+              <div class="cbody stack">
+                <input class="fld" id="qIn" style="width:100%"
+                  placeholder="搜名称 / 标签 / 表名 / SQL 内容…（实时过滤，§6.5 四路合一）">
+                <div class="row">
+                  <span class="lbl">排序</span>
+                  <div class="seg" id="sortSeg">
+                    <button data-v="recent" title="按最后使用时间倒序（§6.5 明确要求）">最近使用</button>
+                    <button data-v="often" title="use_count 在 §6.8 表结构里存着，顺手给它一个出口（待拍板①）">最常用</button>
+                  </div>
+                </div>
+                <div class="row tight" style="flex-wrap:wrap;gap:7px" id="chips"></div>
+                <div class="row tight">
+                  <span class="lbl">按表名</span>
+                  <select class="fld" id="tblSel" style="max-width:200px"></select>
+                </div>
+                <div id="list"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <i class="corner br"></i>
+              <div class="chead"><span class="dot"></span><span class="h">详情与复用</span>
+                <span class="who" id="detLbl"></span></div>
+              <div class="cbody" id="detail"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 设计取舍 · 待你拍板 -->
+        <div class="card sec" style="margin-top:14px">
+          <i class="corner tl"></i>
+          <div class="chead"><span class="dot"></span><span class="h">设计取舍 · 待你拍板</span>
+            <span class="who">规格没写死的缝，只有这五条</span></div>
+          <div class="cbody stack" style="gap:8px;font-size:13px">
+            <div><b>1.</b> <b>要不要加「最常用」排序</b>：§6.5 只点名了「最近使用」，但 use_count 就在
+              §6.8 的表结构里——不加白存了。原型已带上，砍掉是一行事。</div>
+            <div><b>2.</b> <b>表名自动识别的精度</b>：现在抓 FROM/JOIN/UPDATE/INTO 后面的标识符
+              （库名前缀取末段）。别名、子查询会抓不全，information_schema 这类系统视图也会被当表名
+              认出来（识别后可清空手改）。够不够？</div>
+            <div><b>3.</b> <b>导入冲突策略</b>：现在是「名称+SQL 都相同才跳过」，id 不参与比对。
+              要不要改成按 id 覆盖？倾向不——跨机器的 id 本来就不保证一致。</div>
+            <div><b>4.</b> <b>「编辑 → 跳转生成器」怎么带内容</b>（§6.7）：收藏的多是能直接跑的成品，
+              硬灌进预编译/可执行配置都不合适。倾向：跳过去落在一个只读大输入框 + 复制按钮，
+              不强行映射成生成器配置。</div>
+            <div><b>5.</b> <b>团队共享库</b>：商业化条款里团队版的卖点，本地单机版不做同步。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script src="_data.js"></script>
+<script>
+{
+  const { esc, sqlHi, copy } = UI
+  const $ = s => document.querySelector(s)
+
+  /* ---------------- 数据：字段一一对齐 §6.8 favorite_sql 列 ----------------
+     name/sql/remark 同名列照搬；table_names/tags 落库时 join(',') 成 TEXT，
+     内存里用数组好操作；created_at/last_used_at/use_count → createdAt/lastUsedAt/useCount。
+     时间统一 'YYYY-MM-DD HH:MM' 字符串——字典序即时间序，排序不用解析日期。 */
+  const S = {
+    items: [
+      { id: 1, name: '查询用户订单列表', tables: ['user', 'order'], tags: ['订单模块'],
+        remark: '用于订单列表页，按时间倒序展示',
+        createdAt: '2026-08-11 10:02', lastUsedAt: '2026-08-25 16:40', useCount: 23,
+        sql: "SELECT u.id, u.username, o.id AS order_id, o.total\nFROM user u\nINNER JOIN `order` o ON o.user_id = u.id\nWHERE u.status = 1 AND o.create_time >= '2026-08-01'\nORDER BY o.create_time DESC" },
+      { id: 2, name: '统计用户消费总额', tables: ['user', 'order'], tags: ['报表'],
+        remark: '',
+        createdAt: '2026-08-03 09:12', lastUsedAt: '2026-08-24 11:05', useCount: 17,
+        sql: 'SELECT u.id, u.username, COUNT(o.id) AS cnt, IFNULL(SUM(o.total), 0) AS total_amount\nFROM user u\nLEFT JOIN `order` o ON o.user_id = u.id\nGROUP BY u.id\nORDER BY total_amount DESC\nLIMIT 20' },
+      { id: 3, name: '批量更新商品价格（九折）', tables: ['product'], tags: ['运维', '批量更新'],
+        remark: '大促结束后恢复原价用反向脚本',
+        createdAt: '2026-08-06 16:45', lastUsedAt: '2026-08-19 14:00', useCount: 8,
+        sql: 'UPDATE product SET price = price * 0.9\nWHERE on_sale = 1;' },
+      { id: 4, name: 'CCB·批量改状态', tables: ['user'], tags: ['CCB', '批量更新'],
+        remark: '业务发来清单后统一启用',
+        createdAt: '2026-08-22 10:00', lastUsedAt: '2026-08-26 09:40', useCount: 31,
+        sql: 'UPDATE user SET status = 1\nWHERE id IN (1001, 1005, 1009, 1013);' },
+      { id: 5, name: '查表结构（MySQL）', tables: [], tags: ['运维速查'],
+        remark: '',
+        createdAt: '2026-07-30 09:00', lastUsedAt: '2026-08-24 10:00', useCount: 41,
+        sql: "SELECT COLUMN_NAME, COLUMN_TYPE, COLUMN_COMMENT\nFROM information_schema.COLUMNS\nWHERE TABLE_NAME = 'user'\nORDER BY ORDINAL_POSITION;" },
+      { id: 6, name: 'MyBatis·分页骨架', tables: ['user'], tags: ['代码片段'],
+        remark: 'XML 片段照样能收',
+        createdAt: '2026-08-06 16:45', lastUsedAt: '2026-08-23 09:05', useCount: 12,
+        sql: '<select id="pageByStatus" resultMap="BaseResultMap">\n  SELECT <include refid="Base_Column_List"/>\n  FROM user\n  WHERE status = #{status}\n  LIMIT #{offset}, #{size}\n</select>' },
+    ],
+    q: '', tag: '全部', tbl: '', sort: 'recent',
+    sel: null,       // 详情卡展示哪条
+    editing: null,   // 表单正在改哪条（null = 新建模式）
+  }
+  let armedDel = null  // 两段式删除：第一次点只武装，第二次才真删
+
+  /* ---------------- 纯函数：搜索 / 排序 / 高亮 / 表名提取 / 增删改 ---------------- */
+
+  const hayOf = it =>
+    (it.name + '\n' + it.tags.join('\n') + '\n' + it.tables.join('\n') + '\n'
+     + it.sql + '\n' + (it.remark || '')).toLowerCase()
+
+  /** §6.5 四路合一：关键词搜 名称/标签/表名/内容，再叠标签、表名两个筛选项。「全部」「空」不参与匹配 */
+  function filterItems(items, q, tag, tbl){
+    const needle = String(q).trim().toLowerCase()
+    return items.filter(it =>
+      (!needle || hayOf(it).includes(needle))
+      && (tag === '全部' || it.tags.includes(tag))
+      && (!tbl || it.tables.includes(tbl)))
+  }
+
+  function sortItems(items, sort){
+    const arr = [...items]
+    if (sort === 'often') arr.sort((a, b) => b.useCount - a.useCount || b.lastUsedAt.localeCompare(a.lastUsedAt))
+    else arr.sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt))
+    return arr
+  }
+
+  /** §6.7 自动关联表名：抓 FROM/JOIN/UPDATE/INTO 后面的标识符。库名前缀取末段；
+      子查询/别名抓不全没关系——识别结果永远可清空手改（待拍板②） */
+  function extractTables(sql){
+    const out = []
+    const re = /\b(?:from|join|update|into)\s+[`"\[]?([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)?)[`"\]]?/gi
+    let m
+    while ((m = re.exec(String(sql)))){
+      const t = m[1].split('.').pop().toLowerCase()
+      if (!out.includes(t)) out.push(t)
+    }
+    return out
+  }
+
+  /** 命中片段包 <mark>：位置基于原文算，切段后再逐段 esc，转义不会错位 */
+  function hi(text, q){
+    const t = String(text), needle = String(q).trim().toLowerCase()
+    if (!needle) return esc(t)
+    const low = t.toLowerCase()
+    let out = '', i = 0
+    for (;;){
+      const j = low.indexOf(needle, i)
+      if (j < 0){ out += esc(t.slice(i)); break }
+      out += esc(t.slice(i, j)) + '<mark>' + esc(t.slice(j, j + needle.length)) + '</mark>'
+      i = j + needle.length
+    }
+    return out
+  }
+
+  /** §6.4：名称、内容都必填（带 * 的两个字段），缺一返回 null 让调用方标红 */
+  function upsert(patch){
+    const name = String(patch.name ?? '').trim()
+    const sql = String(patch.sql ?? '').trim()
+    if (!name || !sql) return null
+    if (S.editing != null){
+      const it = S.items.find(x => x.id === S.editing)
+      if (!it) return null
+      Object.assign(it, {
+        name, sql,
+        tables: (patch.tables ?? []).map(s => String(s).trim()).filter(Boolean),
+        tags: (patch.tags ?? []).map(s => String(s).trim()).filter(Boolean),
+        remark: String(patch.remark ?? '').trim(),
+      })
+      S.editing = null
+      return it
+    }
+    const it = {
+      id: S.items.reduce((m, x) => Math.max(m, x.id), 0) + 1,
+      name, sql,
+      tables: (patch.tables ?? []).map(s => String(s).trim()).filter(Boolean),
+      tags: (patch.tags ?? []).map(s => String(s).trim()).filter(Boolean),
+      remark: String(patch.remark ?? '').trim(),
+      createdAt: todayStr(), lastUsedAt: todayStr(), useCount: 0,
+    }
+    S.items.push(it)
+    return it
+  }
+
+  function del(id){
+    S.items = S.items.filter(x => x.id !== id)
+    if (S.sel === id) S.sel = null
+    if (S.editing === id){ S.editing = null; resetForm() }
+  }
+
+  /** 复制成功即计数——useCount 是「3 秒复用」验收的直接量化，也是「最常用」的数据源 */
+  function markUsed(id){
+    const it = S.items.find(x => x.id === id)
+    if (!it) return
+    it.useCount += 1
+    it.lastUsedAt = todayStr()
+  }
+
+  /** §6.6 导入：JSON 数组，name+sql 都相同的视为已有跳过；坏行计数不中断 */
+  function importMerge(jsonText){
+    let arr
+    try { arr = JSON.parse(String(jsonText)) } catch { return { error: 'JSON 解析失败' } }
+    if (!Array.isArray(arr)) return { error: '顶层必须是数组' }
+    let added = 0, skipped = 0, invalid = 0
+    for (const raw of arr){
+      if (!raw || typeof raw.name !== 'string' || typeof raw.sql !== 'string'
+        || !raw.name.trim() || !raw.sql.trim()){ invalid++; continue }
+      if (S.items.some(x => x.name === raw.name.trim() && x.sql === raw.sql.trim())){ skipped++; continue }
+      S.items.push({
+        id: S.items.reduce((m, x) => Math.max(m, x.id), 0) + 1,
+        name: raw.name.trim(), sql: raw.sql.trim(),
+        tables: Array.isArray(raw.tables) ? raw.tables.map(String) : [],
+        tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+        remark: typeof raw.remark === 'string' ? raw.remark : '',
+        createdAt: todayStr(), lastUsedAt: todayStr(), useCount: 0,
+      })
+      added++
+    }
+    return { added, skipped, invalid }
+  }
+
+  function todayStr(){
+    const d = new Date()
+    const p = n => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+  }
+
+  /* ---------------- 渲染 ---------------- */
+
+  function refreshFilters(){
+    // 标签圆片：某类删空后自动消失；当前选中失效就回「全部」
+    const tags = [...new Set(S.items.flatMap(x => x.tags))]
+    if (S.tag !== '全部' && !tags.includes(S.tag)) S.tag = '全部'
+    $('#chips').innerHTML = ['全部', ...tags].map(c => {
+      const n = c === '全部' ? S.items.length : S.items.filter(x => x.tags.includes(c)).length
+      return `<button class="chip${S.tag === c ? ' on' : ''}" data-c="${esc(c)}">${esc(c)} <span style="opacity:.6">${n}</span></button>`
+    }).join('')
+    // 表名下拉同理
+    const tbls = [...new Set(S.items.flatMap(x => x.tables))]
+    if (S.tbl && !tbls.includes(S.tbl)) S.tbl = ''
+    $('#tblSel').innerHTML = '<option value="">全部表</option>'
+      + tbls.map(t => `<option ${t === S.tbl ? 'selected' : ''}>${esc(t)}</option>`).join('')
+    // 表单下的快捷标签：点一下把标签追加进输入框（已有的不重复加）
+    $('#tagQuick').innerHTML = tags.map(t =>
+      `<button class="chip" data-t="${esc(t)}">＋ ${esc(t)}</button>`).join('')
+  }
+
+  function favRow(it){
+    const preview = it.sql.split('\n').slice(0, 4).join('\n')
+    return `
+      <div class="fav${S.sel === it.id ? ' sel' : ''}" data-id="${it.id}">
+        <div class="fr">
+          <span class="fnm">⭐ ${hi(it.name, S.q)}</span>
+          <div class="spacer"></div>
+          <span class="hint">复制 ${it.useCount} 次 · ${esc(it.lastUsedAt)}</span>
+          <button class="mini" data-act="copy" title="复制全文并计入使用次数">复制</button>
+          <button class="mini" data-act="edit">编辑</button>
+          <button class="mini" data-act="del">${armedDel === it.id ? '确认删除？' : '删除'}</button>
+        </div>
+        <div class="fr" style="margin-top:4px">
+          ${it.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+          ${it.tables.length ? `<span class="hint">表：${esc(it.tables.join(', '))}</span>` : ''}
+        </div>
+        <pre>${hi(preview, S.q)}</pre>
+      </div>`
+  }
+
+  function paintDetail(){
+    const it = S.items.find(x => x.id === S.sel)
+    if (!it){
+      $('#detLbl').textContent = ''
+      $('#detail').innerHTML = '<div class="empty">左边点一条收藏，这里出全文和元信息</div>'
+      return
+    }
+    $('#detLbl').textContent = `${it.sql.split('\n').length} 行 / ${it.sql.length} 字符`
+    $('#detail').innerHTML = `
+      <div class="stack">
+        <div class="row">
+          <span class="tag hi">${esc(it.name)}</span>
+          <span class="hint">创建 ${esc(it.createdAt)} · 复制 ${it.useCount} 次 · 最近 ${esc(it.lastUsedAt)}</span>
+        </div>
+        <div class="row">
+          ${it.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+          <span class="hint">所属表：${it.tables.length ? esc(it.tables.join(', ')) : '（未关联）'}</span>
+          <div class="spacer"></div>
+          <button class="mini" data-act="copy" data-id="${it.id}" style="font-weight:700" title="验收线：从点到复制 3 秒内">📋 复制全文</button>
+          <a href="sqlgen.html" title="正式版会带着 SQL 内容跳转（方式见待拍板④）" style="font-size:12.5px;color:var(--acc);text-decoration:none">到生成器继续修改 →</a>
+        </div>
+        ${it.remark ? `<div class="hint">备注：${esc(it.remark)}</div>` : ''}
+        <div class="code">
+          <div class="code-bar"><span class="fn">${esc(it.name)}.sql</span></div>
+          <pre>${sqlHi(it.sql)}</pre>
+        </div>
+      </div>`
+  }
+
+  function paint(){
+    refreshFilters()
+    const shown = sortItems(filterItems(S.items, S.q, S.tag, S.tbl), S.sort)
+    $('#listLbl').textContent = `${shown.length} 条 / 共 ${S.items.length} 条收藏`
+    $('#sortSeg').querySelectorAll('button')
+      .forEach(b => b.classList.toggle('on', b.dataset.v === S.sort))
+    $('#list').innerHTML = shown.map(favRow).join('')
+      || '<div class="empty">没有命中的收藏——换个词，或去左边新建一条</div>'
+    $('#formTitle').textContent = S.editing != null ? '✏️ 编辑收藏' : '⭐ 新建收藏'
+    $('#fSave').textContent = S.editing != null ? '保存修改' : '保存'
+    $('#fCancel').hidden = S.editing == null
+    paintDetail()
+  }
+
+  function resetForm(){
+    for (const id of ['#fName', '#fTbls', '#fTags', '#fSql', '#fRemark']) $(id).value = ''
+    $('#fSql').classList.remove('bad'); $('#fName').classList.remove('bad')
+    $('#fHint').textContent = ''
+  }
+
+  /* ---------------- 事件 ---------------- */
+
+  $('#qIn').addEventListener('input', e => { S.q = e.target.value; paint() })
+  $('#chips').addEventListener('click', e => {
+    const c = e.target.closest('[data-c]')
+    if (c){ S.tag = c.dataset.c; armedDel = null; paint() }
+  })
+  $('#tblSel').addEventListener('change', e => { S.tbl = e.target.value; paint() })
+  $('#sortSeg').addEventListener('click', e => {
+    const b = e.target.closest('button')
+    if (b){ S.sort = b.dataset.v; paint() }
+  })
+
+  function doCopy(act, id){
+    const it = S.items.find(x => x.id === id)
+    if (!it) return
+    copy(it.sql); markUsed(id)
+    act.textContent = '已复制 ✓'
+    setTimeout(() => paint(), 900)
+  }
+
+  $('#list').addEventListener('click', e => {
+    const act = e.target.closest('[data-act]')
+    const row = e.target.closest('.fav')
+    if (act && row){
+      const id = Number(row.dataset.id)
+      if (act.dataset.act === 'copy') doCopy(act, id)
+      else if (act.dataset.act === 'edit'){
+        const it = S.items.find(x => x.id === id)
+        S.editing = id; S.sel = id
+        $('#fName').value = it.name; $('#fSql').value = it.sql
+        $('#fTbls').value = it.tables.join(', ')
+        $('#fTags').value = it.tags.join(', ')
+        $('#fRemark').value = it.remark || ''
+        window.scrollTo?.(0, 0)
+        paint()
+      } else if (act.dataset.act === 'del'){
+        // 两段式：第一次点只亮「确认删除？」，误触多一道闸
+        if (armedDel === id){ del(id); armedDel = null }
+        else armedDel = id
+        paint()
+      }
+      return
+    }
+    if (row){ S.sel = Number(row.dataset.id); armedDel = null; paint() }
+  })
+
+  $('#detail').addEventListener('click', e => {
+    const act = e.target.closest('[data-act="copy"]')
+    if (act) doCopy(act, S.sel)
+  })
+
+  $('#tagQuick').addEventListener('click', e => {
+    const b = e.target.closest('[data-t]')
+    if (!b) return
+    const cur = $('#fTags').value.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+    if (!cur.includes(b.dataset.t)) cur.push(b.dataset.t)
+    $('#fTags').value = cur.join(', ')
+  })
+
+  $('#btnDetect').addEventListener('click', () => {
+    const found = extractTables($('#fSql').value)
+    if (found.length){
+      const cur = $('#fTbls').value.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+      $('#fTbls').value = [...new Set([...cur, ...found])].join(', ')
+      $('#fHint').textContent = `认出 ${found.length} 个表名，可手改`
+    } else {
+      $('#fHint').textContent = '没认出表名（可能不是普通 SELECT/UPDATE），可手填'
+    }
+  })
+
+  $('#fSave').addEventListener('click', () => {
+    const splitList = v => v.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+    const it = upsert({
+      name: $('#fName').value, sql: $('#fSql').value,
+      tables: splitList($('#fTbls').value), tags: splitList($('#fTags').value),
+      remark: $('#fRemark').value,
+    })
+    if (!it){
+      $('#fName').classList.toggle('bad', !$('#fName').value.trim())
+      $('#fSql').classList.toggle('bad', !$('#fSql').value.trim())
+      $('#fHint').textContent = '名称和 SQL 内容都是必填（§6.4 带 * 的两项）'
+      return
+    }
+    resetForm()
+    S.sel = it.id
+    $('#fHint').textContent = S.editing == null && it.useCount === 0 ? '已收藏 ✓' : '已保存 ✓'
+    S.editing = null
+    paint()
+  })
+  $('#fCancel').addEventListener('click', () => { S.editing = null; resetForm(); paint() })
+
+  $('#exportBtn').addEventListener('click', () => {
+    const url = URL.createObjectURL(new Blob(
+      [JSON.stringify(S.items, null, 2)], { type: 'application/json' }))
+    const a = document.createElement('a')
+    a.href = url; a.download = 'favorite_sql.json'; a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    $('#ioHint').textContent = `已导出 ${S.items.length} 条 → favorite_sql.json`
+  })
+  $('#importBtn').addEventListener('click', () => $('#importFile').click())
+  $('#importFile').addEventListener('change', e => {
+    const f = e.target.files[0]
+    if (!f) return
+    const rd = new FileReader()
+    rd.onload = () => {
+      const r = importMerge(String(rd.result))
+      $('#ioHint').textContent = r.error ?? `导入完成：新增 ${r.added}，重复跳过 ${r.skipped}，坏行 ${r.invalid}`
+      paint()
+    }
+    rd.readAsText(f)
+    e.target.value = ''
+  })
+
+  paint()
+
+  /* 冒烟钩子：node _smoke-fav.mjs 直接驱动纯函数，不走 DOM */
+  ;(globalThis).__T = () => ({ S, filterItems, sortItems, hi, extractTables, upsert, del, markUsed, importMerge })
+}
+</script>
+</body>
+</html>

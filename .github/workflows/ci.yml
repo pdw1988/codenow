@@ -1,0 +1,40 @@
+name: CI
+
+# 四道闸门里不依赖本机驱动的三道半（typecheck / lint / test / build）在 push 时全跑。
+# 2026-09-22 那轮提交把「验证留给用户」，结果三道是红的——「等用户跑」等于没人跑，
+# 这里是防复发的网。cargo test 仍留本地：oracle / oci 依赖要本机客户端才能链。
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: typecheck
+        run: pnpm typecheck
+
+      - name: lint
+        run: pnpm lint
+
+      - name: test
+        run: pnpm test
+
+      - name: build
+        run: pnpm build

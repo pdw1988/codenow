@@ -1,0 +1,29 @@
+[[permission]]
+identifier = "allow-apiforge-scan"
+description = "APIForge 源码扫描：启动独立 Java 扫描器进程解析 Spring Boot 工程，只回传 stdout JSON；停止扫描按 PID 终止该进程；Vue 工程扫描只读 package.json、.env、路由和 .vue 原文回传。不落盘、不连库。"
+commands.allow = ["apiforge_scan", "apiforge_scan_stop", "apiforge_scan_vue"]
+
+[[permission]]
+identifier = "allow-apiforge-bench"
+description = "APIForge 压测引擎：对环境配置里的服务发起 HTTP 压测（reqwest，只发接口清单里算好的请求），按 500ms 推实时指标事件、结束时推完整报告事件；停止按标志位结束当前压测。不落盘、不连库。"
+commands.allow = ["apiforge_bench_start", "apiforge_bench_stop"]
+
+[[permission]]
+identifier = "allow-apiforge-http"
+description = "APIForge 单次 HTTP（登录/回归/试跑）：用 reqwest 代发，绕开 WebView CORS。只发前端拼好的 URL/头/体，不落盘、不连库。"
+commands.allow = ["apiforge_http"]
+
+[[permission]]
+identifier = "allow-page-browser"
+description = "页面测试：拉起本机 Edge/Chrome（独立配置目录、带调试口），回传 DevTools ws 地址；关闭只认本命令拉起的进程号。不落盘业务数据、不连库。"
+commands.allow = ["page_browser_launch", "page_browser_close"]
+
+[[permission]]
+identifier = "allow-log-file"
+description = "码上追：读取本机日志文件。扫描只建「每行起始字节偏移」索引，按行区间回读原始字节，解码在前端 TextDecoder；只读，不落盘业务数据、不联网。"
+commands.allow = ["log_file_scan", "log_file_slice", "log_file_close"]
+
+[[permission]]
+identifier = "allow-log-ssh"
+description = "码上追：连服务器拉日志。spawn 系统自带 ssh 客户端执行 ls/tail/sed 只读命令，stdout 按块流回前端，取消按会话号终止；密码经 askpass 只在内存传递（见 main.rs），不落盘、不写服务器。"
+commands.allow = ["log_ssh_start", "log_ssh_read", "log_ssh_finish", "log_ssh_abort"]

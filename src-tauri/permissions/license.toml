@@ -1,0 +1,14 @@
+[[permission]]
+identifier = "allow-license-verify"
+description = "校验许可码：只验 Ed25519 签名，不写盘、不联网"
+commands.allow = ["license_verify"]
+
+[[permission]]
+identifier = "allow-license-code"
+description = "读写应用数据目录里的许可码文件"
+commands.allow = ["license_code_load", "license_code_save"]
+
+[[permission]]
+identifier = "allow-license-trial"
+description = "查 / 开始 7 天试用：只读写应用数据目录里的试用标记文件，不联网"
+commands.allow = ["license_trial"]

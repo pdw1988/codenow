@@ -1,0 +1,14 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>批量生成</title>
+<script>
+  const t = new URLSearchParams(location.search).get('t')
+  location.replace('batch-insert.html' + (t ? '?t=' + encodeURIComponent(t) : ''))
+</script>
+</head>
+<body>
+  <p>批量生成已拆成两页，正在转到 <a href="batch-insert.html">批量 INSERT</a>。改已有行请用 <a href="batch-update.html">批量 UPDATE</a>。</p>
+</body>
+</html>

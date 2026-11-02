@@ -1,0 +1,235 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>表结构速查 · 码上 CodeNow 原型</title>
+<link rel="stylesheet" href="_theme.css">
+<style>
+  /* 搜索区：整页的重心，字号刻意比别处大一档 —— 用户进这一页就是来打字的 */
+  .hero{ padding:26px 22px 6px; max-width:1360px; margin:0 auto }
+  .hero .box{ position:relative }
+  .hero input{
+    width:100%; background:var(--panel2); border:1px solid var(--line2); border-radius:var(--r);
+    color:var(--txt); font:17px/1.5 var(--font); padding:16px 128px 16px 46px; outline:none; transition:.15s;
+  }
+  .hero input:focus{ box-shadow:0 0 0 4px color-mix(in srgb, var(--acc) 14%, transparent), var(--acc-glow) }
+  .hero input::placeholder{ color:var(--dimmer); font-size:15px }
+  .hero .ic{ position:absolute; left:16px; top:50%; transform:translateY(-50%); font-size:17px; opacity:.8 }
+  .hero .cnt{
+    position:absolute; right:14px; top:50%; transform:translateY(-50%);
+    font:12px/1 var(--mono); color:var(--dim); letter-spacing:.5px; display:flex; align-items:center; gap:8px;
+  }
+  .hero .x{ cursor:pointer; color:var(--dimmer); font-size:15px } .hero .x:hover{ color:var(--bad) }
+
+  .card:not(.on) > .cbody, .card:not(.on) > .acts{ display:none }
+  .chead{ cursor:pointer } .chead:hover{ background:color-mix(in srgb, var(--acc) 8%, transparent) }
+  .chead .tn{ font:600 15.5px/1.3 var(--mono) } .chead .cm{ font-size:13.5px; color:var(--dim) }
+  .list{ display:flex; flex-direction:column; gap:11px; margin-top:14px }
+  .fkbox{ border:1px solid var(--line); border-radius:var(--r2); padding:11px 13px; margin-top:12px }
+  .fkline{ display:flex; align-items:center; gap:9px; padding:5px 0; font:12.5px/1.5 var(--mono); flex-wrap:wrap }
+  .fkline .arw{ color:var(--acc); font-size:14px }
+  em.hit{ font-style:normal; background:color-mix(in srgb, var(--acc) 30%, transparent); border-radius:2px; padding:0 1px }
+</style>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="schema"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">🔍 表结构速查</div>
+        <div class="sub">7 条匹配规则 · 表名 / 注释 / 字段 / Java 类 / 拼音首字母</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">边打边搜 · 无搜索按钮</span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="hero">
+        <div class="box">
+          <span class="ic">🔍</span>
+          <input id="q" autofocus autocomplete="off"
+                 placeholder="输入表名 / 字段名 / 注释 / 中文 / 拼音首字母，如 user、yh、状态">
+          <span class="cnt"><b id="cnt">7 张</b><span class="x" id="clr" title="清空">✕</span></span>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <span class="lbl">最近查过</span>
+          <div class="chips" id="recent"></div>
+        </div>
+      </div>
+
+      <div class="pane-in" style="padding-top:8px">
+        <div class="row" style="margin-bottom:2px">
+          <span class="lbl" id="rlbl">全部表（7）</span>
+          <div class="spacer"></div>
+          <span class="tag" id="sortTag">按匹配度排序</span>
+        </div>
+        <div class="list" id="list"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script src="_data.js"></script>
+<script>
+const { tables, fks, src, SRC_LABEL, fksOf } = DATA
+const { esc, bindFolds } = UI
+const $ = s => document.querySelector(s)
+
+/* 拼音首字母表。只收种子数据里真出现过的字 —— 原型不需要完整字典，
+   但「yh 能搜到 用户表」这条得真能演示，写死结果就看不出规则存在。 */
+const PY = {'用':'y','户':'h','表':'b','订':'d','单':'d','明':'m','细':'x','商':'s','品':'p','角':'j','色':'s',
+ '关':'g','联':'l','操':'c','作':'z','日':'r','志':'z','主':'z','键':'j','名':'m','密':'m','码':'m','加':'j',
+ '邮':'y','箱':'x','状':'z','态':'t','正':'z','常':'c','禁':'j','创':'c','建':'j','时':'s','间':'j','下':'x',
+ '号':'h','金':'j','额':'e','已':'y','付':'f','待':'d','发':'f','货':'h','完':'w','成':'c','所':'s','属':'s',
+ '数':'s','量':'l','交':'j','价':'j','售':'s','库':'k','存':'c','是':'s','否':'f','上':'s','架':'j','编':'b',
+ '称':'c','人':'r','类':'l','型':'x','详':'x','情':'q','器':'q','的':'d','日志':'rz'}
+const initials = s => [...s].map(ch => PY[ch] || (/[a-z0-9]/i.test(ch) ? ch.toLowerCase() : '')).join('')
+const camel = s => s.replace(/_([a-z0-9])/g, (m, x) => x.toUpperCase())
+
+/**
+ * 打分匹配，对应 PRD 3.4 的 7 条规则。分数写在这里只为排序，界面上只显示命中理由。
+ * 两条踩过的坑照搬 lib/search.ts：
+ *  - Java 类名只「包含」关键字不给高分：类名普遍带 Entity/DO/DTO 后缀，
+ *    搜 entity 会把所有表都捞出来，噪音排在信号前。
+ *  - 字面命中时跳过拼音判断：拼音匹配对原文也返回 true，会多挂一个假的「拼音匹配」标签。
+ */
+function match(t, kw) {
+  if (!kw) return { score: 0, why: [] }
+  const q = kw.toLowerCase().trim()
+  const why = []
+  let score = 0
+  const name = t.name.toLowerCase()
+
+  if (name === q) { score += 100; why.push(['hi', '表名全等']) }
+  else if (name.startsWith(q)) { score += 70; why.push(['hi', '表名前缀']) }
+  else if (name.includes(q)) { score += 45; why.push(['', '表名包含']) }
+
+  if (t.comment.includes(kw.trim())) { score += 55; why.push(['hi', '注释命中']) }
+  else if (initials(t.comment).includes(q) && !/[一-龥]/.test(q)) {
+    score += 34; why.push(['', '拼音 ' + initials(t.comment)])
+  }
+
+  const jc = t.javaClass.toLowerCase()
+  if (jc === q) { score += 60; why.push(['hi', 'Java 类名全等']) }
+  else if (jc.includes(q)) { score += 8 }   // 故意只给很低的分，见上面注释
+
+  const cols = t.columns.filter(c => c.n.toLowerCase().includes(q))
+  if (cols.length) { score += 30; why.push(['', '字段 ' + cols.slice(0, 3).map(c => c.n).join('/')]) }
+  const cc = t.columns.filter(c => c.c && c.c.includes(kw.trim()))
+  if (cc.length && !cols.length) { score += 22; why.push(['', '字段注释 ' + cc[0].n]) }
+
+  return { score, why }
+}
+
+const hl = (text, kw) => {
+  if (!kw) return esc(text)
+  const i = text.toLowerCase().indexOf(kw.toLowerCase())
+  return i < 0 ? esc(text)
+    : esc(text.slice(0, i)) + '<em class="hit">' + esc(text.slice(i, i + kw.length)) + '</em>' + esc(text.slice(i + kw.length))
+}
+
+function colTable(t, kw) {
+  return `<div class="code" style="background:transparent"><div class="scroll">
+    <table class="tbl">
+      <thead><tr>
+        <th style="width:170px">字段名</th><th style="width:132px">类型</th><th style="width:86px">主键</th>
+        <th style="width:66px">必填</th><th style="width:150px">默认值</th><th>注释</th><th style="width:216px">Java 映射</th>
+      </tr></thead>
+      <tbody>${t.columns.map(c => `<tr>
+        <td class="mono">${hl(c.n, kw)}</td>
+        <td class="mono muted">${esc(c.t)}</td>
+        <td>${c.pk ? `<span class="tag pk">PK${c.ai ? ' 自增' : ''}</span>` : ''}</td>
+        <td>${c.nn ? '<span class="tag">NOT NULL</span>' : '<span class="muted">—</span>'}</td>
+        <td class="mono muted">${c.d ? esc(c.d) : '—'}</td>
+        <td>${c.c ? hl(c.c, kw) : '<span class="muted">—</span>'}</td>
+        <td class="mono muted">${esc(c.j)} ${esc(camel(c.n))}</td>
+      </tr>`).join('')}</tbody>
+    </table></div></div>`
+}
+
+function fkBox(t) {
+  const rel = fksOf(t.name)
+  if (!rel.length) return ''
+  const out = rel.filter(f => f.from === t.name), inn = rel.filter(f => f.to === t.name)
+  const badge = f => f.conf === 'constraint'
+    ? `<span class="tag ok">✅ 外键约束${f.name ? ' ' + f.name : ''}</span>`
+    : '<span class="tag wr">⚠️ 命名推断</span>'
+  const line = (f, dir) => `<div class="fkline">
+      <span>${esc(f.from)}.${esc(f.fromCol)}</span>
+      <span class="arw">${dir === 'out' ? '→' : '←'}</span>
+      <span>${esc(f.to)}.${esc(f.toCol)}</span>${badge(f)}</div>`
+  return `<div class="fkbox">
+    <div class="lbl" style="margin-bottom:6px">外键关系 · ${rel.length} 条</div>
+    ${out.length ? `<div class="hint" style="margin-top:6px">引用了其他表（当前表为从表）</div>${out.map(f => line(f, 'out')).join('')}` : ''}
+    ${inn.length ? `<div class="hint" style="margin-top:6px">被其他表引用（当前表为主表）</div>${inn.map(f => line(f, 'in')).join('')}` : ''}
+  </div>`
+}
+
+function card(t, kw, why, open) {
+  const s = src[t.name]
+  return `<div class="card ${open ? 'on' : ''}" data-t="${t.name}">
+    <i class="corner tl"></i><i class="corner br"></i>
+    <div class="chead">
+      <span class="caret">▶</span>
+      <span class="tn">📋 ${hl(t.name, kw)}</span>
+      <span class="cm">${hl(t.comment, kw)}</span>
+      <div class="spacer"></div>
+      ${why.map(([k, v]) => `<span class="tag ${k}">${esc(v)}</span>`).join('')}
+      <span class="tag">${t.columns.length} 字段</span>
+      <span class="tag">${esc(t.javaClass)}.java</span>
+      <span class="tag ${s === 'sql' ? 'hi' : ''}">${SRC_LABEL[s]}</span>
+    </div>
+    <div class="cbody">${colTable(t, kw)}${fkBox(t)}</div>
+    <div class="acts">
+      <button class="ghost">📝 生成 SQL</button>
+      <button class="ghost">⬇ 导出 DDL</button>
+      <button class="ghost">✎ 编辑表结构</button>
+      <div class="spacer"></div>
+      <span class="hint">点标题折叠</span>
+    </div>
+  </div>`
+}
+
+const RECENT = ['user', 'order', 'yh', '状态', 'OrderItem', 'create_time']
+$('#recent').innerHTML = RECENT.map(r => `<button class="chip" data-r="${esc(r)}"><i>↺</i>${esc(r)}</button>`).join('')
+
+function render() {
+  const kw = $('#q').value.trim()
+  let rows
+  if (!kw) rows = tables.map(t => ({ t, why: [] }))
+  else rows = tables.map(t => ({ t, ...match(t, kw) })).filter(r => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+
+  $('#cnt').textContent = kw ? `命中 ${rows.length} / ${tables.length}` : `${tables.length} 张`
+  $('#rlbl').textContent = kw ? `搜索结果（${rows.length}）` : `全部表（${tables.length}）`
+  $('#sortTag').style.display = kw ? '' : 'none'
+
+  if (!rows.length) {
+    $('#list').innerHTML = `<div class="card"><div class="empty">
+      没有匹配「${esc(kw)}」的表<br><span class="hint">试试表名的一段、字段名，或者中文注释的拼音首字母</span></div></div>`
+    return
+  }
+  // 命中第一名直接展开：搜到了还要再点一次才能看字段，等于白搜一趟
+  $('#list').innerHTML = rows.map((r, i) => card(r.t, kw, r.why, i === 0)).join('')
+  $('#list').querySelectorAll('.chead').forEach(h => {
+    h.onclick = () => h.parentElement.classList.toggle('on')
+  })
+}
+
+$('#q').oninput = render
+$('#clr').onclick = () => { $('#q').value = ''; render(); $('#q').focus() }
+$('#recent').onclick = e => {
+  const b = e.target.closest('[data-r]'); if (!b) return
+  $('#q').value = b.dataset.r; render(); $('#q').focus()
+}
+render()
+</script>
+</body>
+</html>

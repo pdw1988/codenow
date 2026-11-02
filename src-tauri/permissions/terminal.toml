@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-terminal"
+description = "码上连：交互式 SSH 终端。在 ConPTY 伪终端里 spawn 系统自带 ssh 客户端（-tt 连到用户在界面填的主机），PTY 输出按块流回前端、键入与窗口尺寸回传；关标签按会话号终止进程。密码经 askpass 只在内存传递（见 main.rs），不落盘、不记录终端内容。"
+commands.allow = ["terminal_start", "terminal_read", "terminal_write", "terminal_resize", "terminal_close"]

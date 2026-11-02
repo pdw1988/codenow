@@ -1,0 +1,126 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>批量 INSERT · 码上 CodeNow 原型</title>
+<link rel="stylesheet" href="_theme.css">
+</head>
+<body data-batch="insert">
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="batch-ins"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">📦 批量 INSERT</div>
+        <div class="sub">造测试数据 · 字段规则 · 逐条 / 多 VALUES / 分批</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">配置即时生成</span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-in">
+        <div class="split">
+          <div class="col">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">① 选表和方言</span>
+                <span class="who">改已有行请用「批量 UPDATE」</span></div>
+              <div class="cbody stack">
+                <div>
+                  <div class="lbl" style="margin-bottom:5px">当前表</div>
+                  <select class="fld" id="tblSel"></select>
+                </div>
+                <div class="row">
+                  <span class="lbl">方言</span>
+                  <div class="seg" id="diaSeg"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <i class="corner br"></i>
+              <div class="chead"><span class="h">② 生成参数</span></div>
+              <div class="cbody stack">
+                <div class="row">
+                  <span class="lbl">条数</span>
+                  <input class="fld" id="cntInp" type="number" min="1" max="500" value="20" style="width:90px">
+                  <span class="hint">1 ~ 500；更多请分批</span>
+                </div>
+                <div class="row">
+                  <span class="lbl">起始ID</span>
+                  <input class="fld" id="startIdInp" placeholder="留空 = 排除自增列" style="width:130px">
+                  <span class="hint">填了就把自增主键一并写入，从这个值起连续编号</span>
+                </div>
+                <div class="row">
+                  <span class="lbl">形态</span>
+                  <div class="seg" id="insSeg">
+                    <button data-v="each" title="每行一条 INSERT。四种方言都能直接跑">逐条</button>
+                    <button data-v="multi" title="拼成一条 INSERT … VALUES (…),(…)…。只有 MySQL 可选">一条多VALUES</button>
+                    <button data-v="chunk" title="每 N 条一组；超过 1MB 的组自动再切">分批</button>
+                  </div>
+                </div>
+                <div class="row" id="perRow" hidden>
+                  <span class="lbl">每组条数</span>
+                  <div class="seg" id="perSeg">
+                    <button data-v="1">1</button><button data-v="10">10</button>
+                    <button data-v="50">50</button><button data-v="100">100</button>
+                  </div>
+                </div>
+                <label class="cb"><input type="checkbox" id="hdrCb" checked>注释头（表名、条数、起始ID）</label>
+              </div>
+            </div>
+
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="h">③ 字段规则</span>
+                <span class="who">默认沿用自动值，要精确控制再改</span></div>
+              <div class="cbody stack">
+                <div id="insRules"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">生成结果</span>
+                <span class="who" id="statLbl"></span></div>
+              <div class="cbody stack">
+                <div class="band info" id="warn" hidden></div>
+                <div class="code">
+                  <div class="code-bar">
+                    <span class="fn" id="fnName"></span>
+                    <span class="lbl" id="codeMeta"></span>
+                    <div class="spacer"></div>
+                    <button class="mini" id="dlBtn">下载</button>
+                    <button class="mini" id="cpBtn">复制</button>
+                  </div>
+                  <pre id="sqlOut"></pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <i class="corner br"></i>
+              <div class="chead"><span class="h" id="pvTitle">预览</span>
+                <span class="who" id="pvLbl"></span></div>
+              <div class="cbody" id="preview"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script src="_data.js"></script>
+<script src="_batch.js"></script>
+</body>
+</html>

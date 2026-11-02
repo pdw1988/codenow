@@ -1,0 +1,263 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>正则测试 · 码上 CodeNow 原型</title>
+<link rel="stylesheet" href="_theme.css">
+<style>
+  .rx{ display:flex; align-items:center; gap:0; border:1px solid var(--line2); border-radius:var(--r2);
+       background:var(--panel2); overflow:hidden; transition:.15s }
+  .rx:focus-within{ box-shadow:0 0 0 3px color-mix(in srgb, var(--acc) 14%, transparent) }
+  .rx.bad{ border-color:var(--bad) }
+  .rx .sl{ padding:0 11px; font:600 17px/1 var(--mono); color:var(--acc); user-select:none }
+  .rx input{ flex:1; background:none; border:0; outline:none; color:var(--txt); font:14.5px/1.6 var(--mono); padding:13px 0 }
+  .rx .fl{ padding:0 12px; font:13px/1 var(--mono); color:var(--dim); border-left:1px solid var(--line);
+           align-self:stretch; display:flex; align-items:center }
+  .prev{ margin:0; padding:13px 14px; font:13.5px/1.9 var(--mono); white-space:pre-wrap; word-break:break-word;
+         max-height:300px; overflow:auto; background:var(--panel2) }
+  .prev mark{ box-shadow:0 0 0 1px color-mix(in srgb, var(--acc) 60%, transparent) }
+  textarea#txt{ min-height:190px; font-size:13px; line-height:1.8 }
+  .pre-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(148px,1fr)); gap:7px }
+  .pre-grid button{ text-align:left }
+</style>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="regex"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">🔬 正则测试</div>
+        <div class="sub">边写边高亮 · 分组、位置、匹配明细都在右边</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">无「测试」按钮 · 输入即匹配</span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-in">
+        <div class="split even">
+          <div class="col">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">正则表达式</span>
+                <div class="spacer"></div><span class="who" id="cntWho">—</span></div>
+              <div class="cbody stack">
+                <div class="rx" id="rxWrap">
+                  <span class="sl">/</span>
+                  <input id="rx" spellcheck="false" autocomplete="off" autofocus>
+                  <span class="sl">/</span>
+                  <span class="fl" id="flTxt">gi</span>
+                </div>
+                <div class="row" id="flags"></div>
+                <div id="err"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="chead"><span class="h">常用</span>
+                <div class="spacer"></div><span class="auto">点一下连测试文本一起换</span></div>
+              <div class="cbody"><div class="pre-grid" id="presets"></div></div>
+            </div>
+
+            <div class="card">
+              <div class="chead"><span class="h">测试文本</span>
+                <div class="spacer"></div><span class="who" id="txtWho"></span></div>
+              <div class="cbody" style="padding:0">
+                <textarea class="fld" id="txt" spellcheck="false"
+                  style="border:0;border-radius:0;background:var(--panel2)"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="card">
+              <i class="corner br"></i>
+              <div class="chead"><span class="dot"></span><span class="h">高亮预览</span>
+                <div class="spacer"></div><span class="tag hi" id="mcnt">0 处匹配</span></div>
+              <div class="cbody" style="padding:0"><pre class="prev" id="prev"></pre></div>
+            </div>
+
+            <div class="card">
+              <div class="chead"><span class="h">匹配明细</span>
+                <div class="spacer"></div><span class="who" id="grpWho"></span></div>
+              <div class="cbody" style="padding:0"><div class="scroll lg" id="detail"></div></div>
+            </div>
+
+            <div class="card">
+              <div class="chead"><span class="h">匹配结果</span>
+                <div class="spacer"></div><button class="mini" id="cp">复制</button></div>
+              <div class="cbody" style="padding:0">
+                <pre id="plain" style="margin:0;padding:13px 14px;font:13px/1.8 var(--mono);max-height:230px;overflow:auto"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script src="_data.js"></script>
+<script>
+const { esc, copy } = UI
+const $ = s => document.querySelector(s)
+
+const FLAGS = [['g', '全局'], ['i', '忽略大小写'], ['m', '多行'], ['s', '. 匹配换行']]
+const S = { flags: new Set(['g', 'i']) }
+
+/* 每条预设连测试文本一起给。只给正则不给样本，用户还得自己造一段能命中的文本，
+   那才是这一页最费时间的一步。 */
+const PRESETS = [
+  { nm: '邮箱', rx: String.raw`[\w.+-]+@[\w-]+\.[\w.-]+`, txt:
+`联系人：zhangsan@example.com、li.si+dev@corp.com.cn
+错的：@nope.com、user@、a@b（这几个不该整条命中）
+运维邮箱 ops_01@sub.example.org 每天收报警` },
+  { nm: '手机号', rx: String.raw`1[3-9]\d{9}`, txt:
+`13812345678 / 13900000000 / 18600000000
+12345678901（1 后面是 2，不该命中）
+座机 010-12345678 也不该命中` },
+  { nm: '身份证', rx: String.raw`[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]`, txt:
+`11010519880307123X
+440305199001011234
+110105208813071234（月份 88，不该命中）` },
+  { nm: 'URL', rx: String.raw`https?://[\w.-]+(?::\d+)?(?:/[\w./?%&=~+-]*)?`, txt:
+`http://localhost:5173/#/schema
+https://mybatis.org/dtd/mybatis-3-mapper.dtd
+jdbc:mysql://127.0.0.1:3306/demo?useSSL=false（jdbc: 开头，前缀不该被吃掉）` },
+  { nm: 'IPv4', rx: String.raw`\b(?:\d{1,3}\.){3}\d{1,3}\b`, txt:
+`来源 192.168.1.100，网关 192.168.1.1
+公网 8.8.8.8 / 300.1.1.1（这个不是合法 IP，纯正则拦不住）
+版本号 1.2.3.4 会被误命中 —— 这就是为什么要看明细` },
+  { nm: '日期', rx: String.raw`(\d{4})-(\d{2})-(\d{2})`, txt:
+`create_time = 2026-08-24 10:30:00
+到期 2026-12-31，签约 2025-01-01
+2026/08/24（斜杠的不命中）` },
+  { nm: '中文', rx: String.raw`[一-龥]+`, txt:
+`COMMENT '状态 1正常 0禁用'
+comment on column PRODUCT.is_publish is '发布状态 0未发布 1已发布 9失效';` },
+  { nm: 'Java 字段', rx: String.raw`private\s+(\w+(?:<[\w,\s]+>)?)\s+([a-z]\w*)\s*;`, txt:
+`private Long id;
+private String userName;
+private LocalDateTime createTime;
+private List<OrderItem> items;
+public String getName() { return name; }` },
+  { nm: '日志取 SQL', rx: String.raw`Preparing:\s*(.+)`, txt:
+`2026-08-24 10:30:01 DEBUG [pool-1] c.e.d.OrderDao.insert:159 -> ==>  Preparing: insert into t_order (user_id, total) values (?, ?)
+2026-08-24 10:30:01 DEBUG [pool-1] c.e.d.OrderDao.insert:159 -> ==> Parameters: 1001(Long), 199.00(BigDecimal)` },
+  { nm: '日志取参数', rx: String.raw`([^,(]+)\(([A-Za-z]+)\)`, txt:
+`Parameters: 1001(Long), 测试用户(String), 199.00(BigDecimal), 2026-08-24 10:30:00.0(Timestamp), null` },
+  { nm: '去行尾空白', rx: String.raw`[ \t]+$`, txt: '这一行尾巴有空格   \n这一行没有\n这一行有制表符\t\t' },
+  { nm: '重复词', rx: String.raw`\b(\w+)\s+\1\b`, txt: 'the the quick brown fox fox jumps\nselect select 1 from dual' },
+]
+
+function build() {
+  const src = $('#rx').value
+  const fl = [...S.flags].join('')
+  $('#flTxt').textContent = fl || '（无）'
+  if (!src) return { re: null, err: '' }
+  try { return { re: new RegExp(src, fl), err: '' } }
+  catch (e) { return { re: null, err: e.message } }
+}
+
+function run() {
+  const { re, err } = build()
+  const text = $('#txt').value
+  $('#txtWho').textContent = `${text.length} 字符 · ${text.split('\n').length} 行`
+  $('#rxWrap').classList.toggle('bad', !!err)
+  $('#err').innerHTML = err
+    ? `<div class="band err"><b>正则不合法</b><br><span class="mono">${esc(err)}</span></div>` : ''
+
+  if (!re) {
+    $('#prev').innerHTML = esc(text)
+    $('#detail').innerHTML = '<div class="empty">' + (err ? '先把正则改对' : '在上面写个正则') + '</div>'
+    $('#plain').textContent = ''
+    $('#mcnt').textContent = '0 处匹配'
+    $('#cntWho').textContent = '—'
+    $('#grpWho').textContent = ''
+    return
+  }
+
+  // 收集匹配。零长度匹配（比如 \b、a*）不推进 lastIndex 会死循环，手动加一
+  const ms = []
+  if (re.global) {
+    re.lastIndex = 0
+    let m
+    while ((m = re.exec(text)) !== null) {
+      ms.push(m)
+      if (m.index === re.lastIndex) re.lastIndex++
+      if (ms.length > 3000) break
+    }
+  } else {
+    const m = re.exec(text)
+    if (m) ms.push(m)
+  }
+
+  const gmax = ms.reduce((a, m) => Math.max(a, m.length - 1), 0)
+  $('#mcnt').textContent = `${ms.length} 处匹配`
+  $('#cntWho').textContent = ms.length ? `${ms.length} 处 · ${gmax} 个分组` : '没有命中'
+  $('#grpWho').textContent = re.global ? '' : '没开 g，只找第一处'
+
+  // 高亮：先按位置切原文再逐段转义，不要在转义后的串上找位置 —— &lt; 会把下标全带偏
+  let html = '', last = 0
+  for (const m of ms) {
+    html += esc(text.slice(last, m.index))
+    html += '<mark>' + (esc(m[0]) || '␀') + '</mark>'
+    last = m.index + m[0].length
+  }
+  html += esc(text.slice(last))
+  $('#prev').innerHTML = html || '<span class="hint">测试文本是空的</span>'
+
+  $('#detail').innerHTML = ms.length ? `<table class="tbl">
+    <thead><tr><th style="width:44px">#</th><th style="width:90px">位置</th><th>匹配内容</th>
+      ${Array.from({ length: gmax }, (_, i) => `<th>组 ${i + 1}</th>`).join('')}</tr></thead>
+    <tbody>${ms.map((m, i) => `<tr>
+      <td class="num">${i + 1}</td>
+      <td class="mono muted">${m.index}–${m.index + m[0].length}</td>
+      <td class="mono">${esc(m[0]) || '<span class="muted">（零长度）</span>'}</td>
+      ${Array.from({ length: gmax }, (_, g) => `<td class="mono ${m[g + 1] === undefined ? 'muted' : ''}">${m[g + 1] === undefined ? '—' : esc(m[g + 1])}</td>`).join('')}
+    </tr>`).join('')}</tbody></table>`
+    : '<div class="empty">一处都没命中<br><span class="hint">左边的测试文本里每条预设都故意留了「不该命中」的行</span></div>'
+
+  $('#plain').textContent = ms.map(m => m[0]).join('\n')
+}
+
+$('#flags').innerHTML = '<span class="lbl">修饰符</span>' + FLAGS.map(([f, l]) =>
+  `<button class="mini ${S.flags.has(f) ? 'on' : ''}" data-f="${f}"><b class="mono">${f}</b> ${l}</button>`).join('')
+$('#flags').querySelectorAll('[data-f]').forEach(b => {
+  b.onclick = () => {
+    S.flags.has(b.dataset.f) ? S.flags.delete(b.dataset.f) : S.flags.add(b.dataset.f)
+    b.classList.toggle('on')
+    run()
+  }
+})
+
+$('#presets').innerHTML = PRESETS.map((p, i) => `<button class="mini" data-p="${i}">${p.nm}</button>`).join('')
+$('#presets').querySelectorAll('[data-p]').forEach(b => {
+  b.onclick = () => {
+    const p = PRESETS[+b.dataset.p]
+    $('#rx').value = p.rx
+    $('#txt').value = p.txt
+    $('#presets').querySelectorAll('.mini').forEach(x => x.classList.toggle('on', x === b))
+    run()
+  }
+})
+
+$('#rx').oninput = run
+$('#txt').oninput = run
+$('#cp').onclick = () => copy($('#plain').textContent, $('#cp'))
+
+// 进页面就有东西可看
+$('#rx').value = PRESETS[0].rx
+$('#txt').value = PRESETS[0].txt
+$('#presets').querySelector('[data-p="0"]').classList.add('on')
+run()
+</script>
+</body>
+</html>

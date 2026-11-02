@@ -1,0 +1,519 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>配置管理 · 码上 CodeNow 原型</title>
+<link rel="stylesheet" href="_theme.css">
+<style>
+  /* 行号栏和输入框同高同滚。行号单独一列而不是画进 textarea：
+     textarea 的滚动位置能同步，字体渲染却同步不了，画进去必然错位半行 */
+  .edwrap{ display:flex; background:var(--panel2) }
+  .edwrap .gut{ flex:none; width:52px; padding:13px 8px 13px 0; text-align:right;
+    font:12.5px/1.7 var(--mono); color:var(--dimmer); user-select:none;
+    overflow:hidden; border-right:1px solid var(--line); background:color-mix(in srgb, var(--panel) 40%, transparent) }
+  .edwrap .gut i{ display:block; font-style:normal }
+  .edwrap .gut i.bad{ color:var(--bad); font-weight:600 }
+  textarea#src{ min-height:470px; font-size:12.5px; line-height:1.7; border:0; border-radius:0;
+    background:none; resize:vertical }
+  .ops{ display:flex; gap:8px; align-items:center; flex-wrap:wrap }
+  pre#out{ margin:0; padding:13px 14px; font:13px/1.75 var(--mono); min-height:300px;
+    max-height:430px; overflow:auto; white-space:pre }
+</style>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="config"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">⚙️ 配置管理</div>
+        <div class="sub">YAML ↔ Properties 一键互转 · 实时校验报行号</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">粘贴即校验 · 报错带行号</span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-in">
+        <div class="split even">
+
+          <!-- 左：输入 -->
+          <div class="col">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">输入</span>
+                <span class="who" id="stat"></span>
+                <div class="spacer"></div>
+                <div class="seg" id="mode">
+                  <button data-m="yaml" class="on">YAML</button>
+                  <button data-m="props">Properties</button>
+                  <button data-m="auto" title="按内容特征判断：成片的 a.b=c 是 Properties，有缩进层级的是 YAML">自动识别</button>
+                </div>
+                <div class="seg" id="indent" title="只对 YAML 生效">
+                  <button data-i="2" class="on">2 空格</button>
+                  <button data-i="4">4 空格</button>
+                </div>
+              </div>
+              <div class="cbody" style="padding:0">
+                <div class="edwrap">
+                  <div class="gut" id="gut"></div>
+                  <textarea class="fld" id="src" spellcheck="false"
+                    placeholder="粘一段 application.yml 或 application.properties 进来 —— 校验是实时的，不用点按钮"></textarea>
+                </div>
+              </div>
+              <div class="acts" id="verr" style="display:none"></div>
+            </div>
+
+            <div class="card">
+              <div class="chead"><span class="h">智能提示</span>
+                <div class="spacer"></div><span class="tag hi" id="hcnt"></span></div>
+              <div class="cbody stack">
+                <div class="expr" id="hintWrap">
+                  <span class="sl">💡</span>
+                  <input id="hintQ" spellcheck="false" autocomplete="off" placeholder="输入 spring. 、server. 试试 —— 点一条直接补进编辑器">
+                </div>
+                <div class="hints" id="hints"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右：输出 -->
+          <div class="col">
+            <div class="card">
+              <i class="corner br"></i>
+              <div class="chead"><span class="dot"></span><span class="h">输出结果</span>
+                <span class="who" id="ostat"></span>
+                <div class="spacer"></div>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--dim)"
+                       title="只对 Properties 输出生效：键按字母排序，注释跟着原来的键走">
+                  <input type="checkbox" id="sort"> 排序
+                </label>
+                <div class="seg" id="dir">
+                  <button data-d="props">转 Properties</button>
+                  <button data-d="yaml" class="on">保持 YAML</button>
+                </div>
+                <button class="mini" id="fmt">格式化</button>
+                <button class="mini" id="cp">复制</button>
+                <button class="mini" id="dl">导出文件</button>
+              </div>
+              <div class="cbody" style="padding:0">
+                <pre id="out"><span class="hint">左边粘入内容后这里就是转换结果 —— 方向用上面的开关切，不用重新粘贴。</span></pre>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="chead"><span class="h">多环境配置</span>
+                <div class="spacer"></div><span class="tag">结构预留 · MVP 不做</span></div>
+              <div class="cbody stack">
+                <div class="row" style="gap:8px;align-items:center">
+                  <div class="seg" id="env">
+                    <button data-e="dev" class="on">dev</button>
+                    <button data-e="test">test</button>
+                    <button data-e="prod">prod</button>
+                  </div>
+                  <div class="spacer" style="flex:1"></div>
+                  <button class="mini" id="diff" disabled title="一键对比是后续自动化测试/运维的铺垫（PRD 5.4.4），MVP 阶段每个环境还只有一份独立内容，没有可对比的对象">一键对比</button>
+                </div>
+                <div class="hint">内容按（文件名 × 环境）各存一份，落 SQLite 的 config_cache 表；
+                  切环境就是切换编辑内容，互不影响。</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script src="_data.js"></script>
+<script>
+const { esc, copy } = UI
+const $ = s => document.querySelector(s)
+
+const SAMPLE = [
+  '# 应用主配置 —— 粘进来就已经在校验了',
+  'spring:',
+  '  datasource:',
+  '    url: jdbc:mysql://localhost:3306/test   # 本地库',
+  '    username: root',
+  '    password: 123456',
+  '    hikari:',
+  '      maximum-pool-size: 10',
+  '  redis:',
+  '    host: localhost',
+  '    port: 6379',
+  'server:',
+  '  port: 8080',
+  'logging:',
+  '  level:',
+  '    com.pdw.dao: debug',
+].join('\n')
+
+/* ================= 内置提示元数据（节选自 Spring Boot 常用配置） ================= */
+const SPRING_META = [
+  ['spring.datasource.url', 'JDBC 连接 URL', '—'],
+  ['spring.datasource.username', '数据库用户名', '—'],
+  ['spring.datasource.password', '数据库密码', '—'],
+  ['spring.datasource.driver-class-name', '驱动类名，通常留空让 URL 自动推断', '自动'],
+  ['spring.datasource.hikari.maximum-pool-size', '最大连接数', '10'],
+  ['spring.datasource.hikari.minimum-idle', '最小空闲连接', '同 maximum-pool-size'],
+  ['spring.redis.host', 'Redis 主机地址', 'localhost'],
+  ['spring.redis.port', 'Redis 端口', '6379'],
+  ['spring.redis.password', 'Redis 密码', '—'],
+  ['spring.profiles.active', '激活的环境 profile', 'default'],
+  ['server.port', 'HTTP 监听端口', '8080'],
+  ['server.servlet.context-path', '上下文路径', '/'],
+  ['logging.level.root', '根日志级别', 'INFO'],
+  ['mybatis.mapper-locations', 'Mapper XML 位置', 'classpath*:/mapper/**/*.xml'],
+]
+
+/* ================= 迷你解析器 =================
+   只做够演示的子集：缩进层级 map、标量、单行注释、- 列表项。
+   解析不是目标，校验和互转才是 —— 所以错误必须带行号抛出来。 */
+
+/** 一行的解剖结果 */
+function dissect(line) {
+  // 找不在引号里的 # ：从行首扫，引号内的不算注释
+  let q = null, cut = -1
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (q) { if (ch === q) q = null; continue }
+    if (ch === "'" || ch === '"') { q = ch; continue }
+    if (ch === '#' && (i === 0 || /\s/.test(line[i - 1]))) { cut = i; break }
+  }
+  const code = cut >= 0 ? line.slice(0, cut) : line
+  return { code: code.trimEnd(), comment: cut >= 0 ? line.slice(cut).trim() : '' }
+}
+
+function unquote(v) {
+  if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"')))
+    return v.slice(1, -1)
+  return v
+}
+
+/**
+ * 解析 YAML。返回 { tree, notes }：
+ * tree 是嵌套对象；notes 按「完整点分路径」记每个叶子的行尾注释 ——
+ * 转换成 Properties 后注释还能找到自己的键，靠的就是这份完整路径。
+ * 缩进以偶数空格为准，混用直接报错 —— 那正是用户最常犯的错。
+ */
+function parseYaml(src) {
+  const lines = src.split('\n')
+  const tree = {}
+  const notes = {}
+  // 缩进栈：栈顶是当前父级。path 是父级的完整点分路径，叶子注释要用
+  const stack = [{ indent: -2, node: tree, path: '' }]
+  let lastListOwner = ''
+
+  lines.forEach((raw, idx) => {
+    const ln = idx + 1
+    const { code, comment } = dissect(raw)
+    if (!code.trim()) return                          // 空行 / 纯注释行不参与结构
+    if (/^\t/.test(raw)) throw new Error(`第 ${ln} 行：非法字符——制表符，缩进必须用空格`)
+    const indent = code.match(/^ */)[0].length
+    const body = code.trim()
+
+    if (indent % 2 !== 0 && !body.startsWith('- '))
+      throw new Error(`第 ${ln} 行：缩进错误——期望偶数空格，实际 ${indent} 个`)
+    while (stack.length > 1 && indent <= stack[stack.length - 1].indent) stack.pop()
+    const top = stack[stack.length - 1]
+
+    if (body.startsWith('- ')) {                      // 列表项：挂在最近一个键名下，键是下标
+      const owner = lastListOwner || top.path
+      const n = Object.keys(top.node).filter(k => /^\d+$/.test(k)).length
+      top.node[n] = scalarOf(body.slice(2))
+      if (comment) notes[`${owner}[${n}]`] = comment
+      return
+    }
+
+    const m = /^([^:]+):(?:\s+(.*))?$/.exec(body)
+    if (!m) throw new Error(`第 ${ln} 行：看不懂的行——既不是 a: b 也不是 - item`)
+    const key = unquote(m[1].trim())
+    if (key in top.node) throw new Error(`第 ${ln} 行：重复键 '${key}'`)
+    const path = top.path ? `${top.path}.${key}` : key
+
+    if (m[2]) {
+      top.node[key] = scalarOf(m[2])
+      if (comment) notes[path] = comment              // 叶子的行尾注释，跟着完整路径走
+      lastListOwner = path
+    } else {
+      top.node[key] = {}
+      stack.push({ indent, node: top.node[key], path })
+    }
+  })
+  return { tree, notes }
+}
+
+/** 标量：去掉引号；纯数字转数字；true/false/null 转字面量 */
+function scalarOf(text) {
+  if (text === 'true') return true
+  if (text === 'false') return false
+  if (text === 'null' || text === '~') return null
+  if (/^-?\d+(\.\d+)?$/.test(text)) return Number(text)
+  return unquote(text)
+}
+
+/** 解析 Properties。多行值（反斜杠续行）支持到够演示的程度 */
+function parseProps(src) {
+  const tree = {}
+  const notes = {}
+  const seen = new Map()
+  const lines = src.split('\n')
+  lines.forEach((raw, idx) => {
+    const ln = idx + 1
+    const { code, comment } = dissect(raw)
+    if (!code.trim()) return
+    const m = /^([^=:]+)[=:](.*)$/.exec(code)
+    if (!m) throw new Error(`第 ${ln} 行：缺 '=' —— 这一行既没有键值分隔符也不是注释`)
+    const key = m[1].trim()
+    if (seen.has(key)) throw new Error(`第 ${ln} 行：重复键 '${key}'（第一次出现在第 ${seen.get(key)} 行）`)
+    seen.set(key, ln)
+    const val = unquote(m[2].trim())
+    tree[key] = val
+    if (comment) notes[key] = comment
+  })
+  return { tree, notes }
+}
+
+/** 展开嵌套对象为 a.b.c 路径。数组走 key[0] —— Spring Boot 的绑定写法 */
+function flatten(node, prefix = '', out = {}) {
+  for (const [k, v] of Object.entries(node)) {
+    const p = prefix ? (Array.isArray(node) ? `${prefix}[${k}]` : `${prefix}.${k}`) : k
+    if (v && typeof v === 'object' && Object.keys(v).length) flatten(v, p, out)
+    else out[p] = Array.isArray(v) ? v.join(', ') : v
+  }
+  return out
+}
+
+/** 把 a.b.c 路径折回嵌套树。同名前缀冲突说明两个键一长一短互相覆盖 */
+function nest(flat) {
+  const root = {}
+  for (const [path, val] of Object.entries(flat)) {
+    const parts = []
+    path.split('.').forEach(seg => {
+      const m = /^(\w+)\[(\d+)\]$/.exec(seg)
+      if (m) { parts.push(m[1], m[2]); return }
+      parts.push(seg)
+    })
+    let cur = root
+    parts.forEach((k, i) => {
+      if (i === parts.length - 1) {
+        if (typeof cur === 'string') throw new Error(`'${path}' 和已有的键冲突：一个既是叶子又是分支`)
+        cur[k] = val
+        return
+      }
+      cur[k] = cur[k] && typeof cur[k] === 'object' ? cur[k] : {}
+      cur = cur[k]
+    })
+  }
+  return root
+}
+
+function dumpYaml(node, indentUnit, notes = {}, out = []) {
+  const walk = (node, depth, base) => {
+    for (const [k, v] of Object.entries(node)) {
+      const pad = ' '.repeat(indentUnit * depth)
+      // 注释按完整点分路径找 —— 嵌套键的注释不能只看本层键名，否则 url 和 redis.url 会串
+      const path = base ? `${base}.${k}` : k
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        out.push(`${pad}${k}:`)
+        walk(v, depth + 1, path)
+      } else {
+        const text = v === null ? '~' : typeof v === 'string' && /[#:]/.test(v) ? `'${v}'` : String(v)
+        out.push(`${pad}${k}: ${text}${notes[path] ? `   ${notes[path]}` : ''}`)
+      }
+    }
+  }
+  walk(node, 0, '')
+  return out.join('\n')
+}
+
+function dumpProps(flat, notes, sorted) {
+  const keys = Object.keys(flat)
+  if (sorted) keys.sort((a, b) => a.localeCompare(b))
+  // 值里的冒号/斜杠不用任何转义 —— 分隔符只是键后面那一个 = 或 :，
+  // 给 jdbc url 加引号反而错了：properties 不吃引号，引号会原样进值里
+  return keys.map(k => `${k}=${flat[k]}${notes[k] ? `   ${notes[k]}` : ''}`).join('\n')
+}
+
+/* ================= 上色 =================
+   一条主正则单趟扫完 —— 分步叠加替换的话，后一步会把前一步插进去的
+   class="k" 里的引号再包一层，整个标记就被吃成纯文本了（_shell.js 的
+   sqlHi 注释里记过同一条教训）。 */
+const ymlHi = src => esc(src).replace(
+  /(#.*)$|('[^']*'|"[^"]*")|^([ \t]*[\w.-]+)(?=:)|\b(-?\d+(?:\.\d+)?)\b/gm,
+  (m, c, s, k, n) =>
+    c ? `<span class="c">${c}</span>`
+      : s ? `<span class="s">${s}</span>`
+        : k ? `<span class="k">${k}</span>`
+          : `<span class="n">${n}</span>`)
+
+const propsHi = src => esc(src).replace(
+  /(#.*)$|^([\w.[\]-]+)(=)|\b(-?\d+(?:\.\d+)?)\b/gm,
+  (m, c, k, eq, n) =>
+    c ? `<span class="c">${c}</span>`
+      : k ? `<span class="k">${k}</span>=`
+        : `<span class="n">${n}</span>`)
+
+/* ================= 主流程 ================= */
+/* 模式和输出方向都从 seg 的 .on 现读，不缓存变量 —— 缓存了就得在每个
+   点击处理里同步，漏一处就是「按钮亮了行为没变」这种最难看的 bug */
+const sniff = src => /^[ \t]*[\w.[\]-]+\s*[=:][ \t]*\S/m.test(src.split('\n').find(l => l.trim() && !l.trim().startsWith('#')) || '')
+  ? (/^\s*[\w.[\]-]+\s*=\s*\S/m.test(src) && !/: \S/.test(src) ? 'props' : 'yaml')
+  : 'yaml'
+
+function currentMode() {
+  const picked = $('#mode .on').dataset.m
+  if (picked !== 'auto') return picked
+  return sniff($('#src').value)
+}
+const currentDir = () => $('#dir .on').dataset.d
+
+function run() {
+  const src = $('#src').value
+  const MODE = currentMode()
+  const DIR = currentDir()
+  $('#stat').textContent = `${src.split('\n').length} 行 · ${src.length} 字符 · ${MODE === 'yaml' ? 'YAML' : 'Properties'}`
+  paintGutter(src)
+
+  if (!src.trim()) {
+    $('#verr').style.display = 'none'
+    $('#ostat').textContent = ''
+    return
+  }
+
+  // 校验 + 解析（同一遍：解析器遇到的问题就是校验要报的问题）
+  let parsed
+  try {
+    parsed = MODE === 'yaml' ? parseYaml(src) : parseProps(src)
+    $('#verr').style.display = 'flex'
+    $('#verr').innerHTML = `<div class="band ok" style="flex:1"><b>✅ 校验通过</b>&nbsp;${parsed.tree ? Object.keys(flatten(parsed.tree)).length : 0} 个键</div>`
+    markLines([])
+  } catch (e) {
+    $('#verr').style.display = 'flex'
+    $('#verr').innerHTML = `<div class="band err" style="flex:1"><b>❌ 校验失败</b><br><span class="mono" style="font-size:12px">${esc(e.message)}</span></div>`
+    const lm = /第 (\d+) 行/.exec(e.message)
+    markLines(lm ? [+lm[1]] : [])
+    $('#ostat').textContent = '有错，先修上面标出的行'
+    return
+  }
+
+  // 输出：yaml = 保持格式化后的 YAML；props = 展开成键值对
+  let text, stat
+  try {
+    if (DIR === 'props') {
+      const flat = flatten(parsed.tree)
+      stat = `${Object.keys(flat).length} 个键`
+      text = dumpProps(flat, parsed.notes ?? {}, $('#sort').checked)
+    } else {
+      const tree = MODE === 'props' ? nest(parsed.tree) : parsed.tree
+      const unit = +$('#indent .on').dataset.i
+      text = MODE === 'props'
+        ? dumpYaml(tree, unit, parsed.notes ?? {})
+        : dumpYaml(tree, unit)
+      stat = `${text.split('\n').length} 行`
+    }
+  } catch (e) {
+    $('#ostat').textContent = e.message
+    return
+  }
+  $('#ostat').textContent = stat
+  $('#out').dataset.raw = text
+  $('#out').innerHTML = DIR === 'props' ? propsHi(text) : ymlHi(text)
+}
+
+/** 行号栏：出错行标红。textarea 和 gutter 各自滚的话会错位，
+    所以竖向滚动由 textarea 带，gutter 用 transform 跟随 */
+function paintGutter(src) {
+  const n = Math.max(src.split('\n').length, 1)
+  $('#gut').innerHTML = Array.from({ length: n }, (_, i) => `<i data-ln="${i + 1}">${i + 1}</i>`).join('')
+}
+function markLines(lines) {
+  $('#gut').querySelectorAll('i').forEach(i =>
+    i.classList.toggle('bad', lines.includes(+i.dataset.ln)))
+}
+$('#src').addEventListener('scroll', () => {
+  $('#gut').style.transform = `translateY(${-$('#src').scrollTop}px)`
+})
+
+/* ================= 交互接线 ================= */
+const bindSeg = (sel, fn) => $(sel).querySelectorAll('button').forEach(b => {
+  b.onclick = () => {
+    if (b.disabled) return
+    $(sel).querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b))
+    fn?.(b)
+    run()
+  }
+})
+bindSeg('#mode')
+bindSeg('#indent')
+bindSeg('#dir')
+bindSeg('#env')
+$('#sort').onchange = run
+
+let timer
+$('#src').oninput = () => { clearTimeout(timer); timer = setTimeout(run, 140) }
+
+/* 格式化：编辑器里是什么格式就重排成什么格式，注释跟着键走。
+   解析不过就什么都不动 —— 对着报错的内容「整理缩进」只会把错误也一起格式化掉 */
+$('#fmt').onclick = () => {
+  if ($('#verr .err')) return
+  const mode = currentMode()
+  const parsed = mode === 'yaml' ? parseYaml($('#src').value) : parseProps($('#src').value)
+  $('#src').value = mode === 'yaml'
+    ? dumpYaml(parsed.tree, +$('#indent .on').dataset.i, parsed.notes ?? {})
+    : dumpProps(flatten(parsed.tree), parsed.notes ?? {}, $('#sort').checked)
+  run()
+}
+
+$('#cp').onclick = () => copy($('#out').dataset.raw || '', $('#cp'))
+$('#dl').onclick = () => {
+  const raw = $('#out').dataset.raw
+  if (!raw) return
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([raw], { type: 'text/plain' }))
+  a.download = currentDir() === 'props' ? 'application.properties' : 'application.yml'
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+/* 智能提示：前缀过滤 + 包含兜底。点一条 = 把光标处正在打的词补全成完整键 */
+function paintHints() {
+  const q = $('#hintQ').value.trim().toLowerCase()
+  const hit = SPRING_META.filter(([k, d]) =>
+    !q || k.toLowerCase().startsWith(q) || d.includes(q) || k.toLowerCase().includes(q))
+  $('#hcnt').textContent = q ? `${hit.length} 条` : `${SPRING_META.length} 条内置`
+  $('#hints').innerHTML = hit.map(([k, d, dv]) =>
+    `<div class="hint-row" data-k="${esc(k)}"><code>${esc(k)}</code>
+     <div class="spacer" style="flex:1"></div>
+     <span class="ds">${esc(d)}${dv && dv !== '—' ? ` · 默认 ${esc(dv)}` : ''}</span></div>`).join('')
+  $('#hints').querySelectorAll('.hint-row').forEach(el => {
+    el.onclick = () => {
+      const ta = $('#src')
+      const pos = ta.selectionStart
+      const before = ta.value.slice(0, pos)
+      const wordMatch = /[\w.-]*$/.exec(before)
+      const joiner = currentMode() === 'yaml' ? ': ' : '='
+      const start = pos - wordMatch[0].length
+      ta.value = ta.value.slice(0, start) + el.dataset.k + joiner + ta.value.slice(pos)
+      ta.focus()
+      ta.selectionStart = ta.selectionEnd = start + el.dataset.k.length + joiner.length
+      run()
+    }
+  })
+}
+$('#hintQ').oninput = paintHints
+
+paintHints()
+$('#src').value = SAMPLE
+run()
+</script>
+</body>
+</html>

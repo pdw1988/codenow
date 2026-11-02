@@ -1,0 +1,543 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>SELECT转UPDATE · 码上 CodeNow 原型</title>
+<link rel="stylesheet" href="_theme.css">
+<style>
+  /* 没贴内容时：中间一块，只干「把结果贴进来」这一件事 */
+  .s2u-empty { max-width: 720px; margin: 28px auto 40px }
+  .s2u-empty .hero { padding: 18px 0 22px }
+  .s2u-empty .hero h1 { font-size: 28px }
+  .s2u-paste ta, .s2u-paste textarea { min-height: 220px }
+  .s2u-paste .hint-row { margin-top: 8px; color: var(--dimmer); font-size: 12.5px }
+
+  /* 贴完之后：左窄右宽，右栏第一张永远是 UPDATE */
+  .s2u-work .split { grid-template-columns: minmax(320px, 0.92fr) minmax(420px, 1.18fr) }
+  .s2u-work textarea { min-height: 120px }
+
+  .prow{ display:flex; align-items:center; gap:9px; padding:7px 10px;
+         border:1px solid var(--line); border-radius:var(--r2) }
+  .prow + .prow{ margin-top:6px }
+  .prow:hover{ border-color:var(--line2); background:color-mix(in srgb, var(--acc) 6%, transparent) }
+  .prow .cn{ font:12.5px/1.3 var(--mono); font-weight:600 }
+  .prow .cc{ font-size:12px; color:var(--dimmer); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .prow .tgt{ width:150px; flex:none }
+  .pstat{ display:flex; align-items:center; gap:8px; margin-top:8px;
+          font-size:12.5px; color:var(--dimmer); flex-wrap:wrap }
+  .pstat select{ max-width:120px; padding:3px 6px }
+  .arrow{ color:var(--dimmer); margin:0 5px }
+  .oldv{ color:var(--dimmer); text-decoration:line-through;
+         text-decoration-color:color-mix(in srgb, var(--acc) 55%, transparent) }
+  .newv{ color:var(--acc); font-weight:700; font-family:var(--mono); font-size:12.5px }
+  .mono-c{ font-family:var(--mono); font-size:12.5px }
+  /* .row 写了 display:flex，会盖掉 hidden 的默认 none */
+  #emptyView[hidden], #workView[hidden], #workTools[hidden], #workSep[hidden] { display: none !important }
+</style>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="s2u"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">🔁 SELECT转UPDATE</div>
+        <div class="sub">把查询结果贴进来，立刻得到 UPDATE</div>
+      </div>
+      <div class="spacer"></div>
+      <div id="workTools" hidden class="row" style="gap:10px">
+        <select class="fld" id="tblSel" style="max-width:240px"></select>
+        <div class="seg" id="diaSeg"></div>
+        <button class="mini" id="clearRaw">清空，重新贴</button>
+      </div>
+      <div class="sep" id="workSep" hidden></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-in">
+
+        <!-- 空态：只留粘贴。定位方式 / 字段勾选 / 预览 / 格式 全藏着 -->
+        <div id="emptyView" class="s2u-empty">
+          <div class="hero">
+            <div class="eye">从表格到 UPDATE</div>
+            <h1>先把查询结果贴进来</h1>
+            <p>Navicat、DataGrip、Excel 里复制表格，直接 Ctrl+V。主键会自动认，贴完就能复制语句。</p>
+          </div>
+          <div class="card s2u-paste">
+            <i class="corner tl"></i>
+            <div class="chead">
+              <span class="dot"></span><span class="h">查询结果</span>
+              <span class="who">带表头、纯文本、单列主键都认</span>
+              <div class="spacer"></div>
+              <button class="mini" id="fillDemo">填一份订单表示例</button>
+            </div>
+            <div class="cbody">
+              <textarea class="fld" id="pasteEmpty" rows="10"
+                placeholder="从 Navicat / DataGrip / Excel 复制后，贴在这里"></textarea>
+              <div class="row hint-row">
+                <span>按这张表认主键和字段</span>
+                <select class="fld" id="tblSelEmpty" style="max-width:280px"></select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 贴完：右栏第一张是 UPDATE，字段和预览在下面或左边 -->
+        <div id="workView" class="s2u-work" hidden>
+          <div class="split">
+            <div class="col">
+              <div class="card s2u-paste">
+                <i class="corner tl"></i>
+                <div class="chead">
+                  <span class="dot"></span><span class="h">已贴入的结果</span>
+                  <span class="who" id="shapeLbl"></span>
+                  <div class="spacer"></div>
+                  <button class="mini" id="fillAgain">换示例</button>
+                </div>
+                <div class="cbody">
+                  <textarea class="fld" id="paste" rows="5"></textarea>
+                  <div class="pstat" id="pstat"></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <i class="corner br"></i>
+                <div class="chead">
+                  <span class="dot"></span><span class="h">要改哪些字段</span>
+                  <span class="who">勾上，目标值可改；留空就用粘贴里的值</span>
+                </div>
+                <div class="cbody" id="fields"></div>
+              </div>
+            </div>
+
+            <div class="col">
+              <div class="card">
+                <i class="corner tl"></i>
+                <div class="chead">
+                  <span class="dot"></span><span class="h">UPDATE</span>
+                  <span class="who" id="statLbl"></span>
+                  <div class="spacer"></div>
+                  <div class="seg" id="fmtSeg">
+                    <button data-v="auto" class="on" title="各行新值相同走 IN，不同走 CASE WHEN">自动</button>
+                    <button data-v="each" title="每个主键一条，行数多时又长又慢">逐条</button>
+                    <button data-v="in" title="一条 WHERE id IN (…)，要求各行目标值相同">IN</button>
+                    <button data-v="case" title="一条 CASE WHEN 按行赋值">CASE</button>
+                  </div>
+                </div>
+                <div class="cbody stack">
+                  <div class="hint" id="warn"></div>
+                  <div class="code">
+                    <div class="code-bar">
+                      <span class="fn" id="fname"></span>
+                      <button class="mini" id="cp">复制</button>
+                    </div>
+                    <pre class="lg" id="code"></pre>
+                  </div>
+                  <div class="acts">
+                    <button class="mini" id="dl">📥 导出 .sql</button>
+                    <span class="auto" id="fmtHint"></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card foldable" id="pvCard">
+                <div class="chead" id="pvHead">
+                  <span class="caret">▸</span>
+                  <span class="h">哪些行会改</span>
+                  <span class="who" id="pvLbl"></span>
+                </div>
+                <div class="cbody" id="preview"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script src="_data.js"></script>
+<script>
+const { tables, byName, DIALECTS } = DATA
+const { esc, sqlHi, copy } = UI
+const $ = s => document.querySelector(s)
+
+const RESERVED = new Set(['order', 'user', 'group', 'table', 'key', 'index', 'desc', 'comment',
+  'level', 'number', 'date', 'value', 'check', 'session', 'mode', 'view', 'raw', 'size', 'start', 'no'])
+const qi = n => (RESERVED.has(n.toLowerCase()) ? DIALECTS[S.dia].q(n) : n)
+const isNumLike = s => /^-?\d+(\.\d+)?$/.test(String(s).trim())
+
+const S = {
+  table: 'order', dia: 'oracle',
+  raw: '',
+  parsed: null,
+  pk: '', pkManual: false,
+  updOn: {},
+  tgt: {},
+  touched: false,
+  autoDone: false,
+  fmt: 'auto',
+}
+
+function pickDelim(lines) {
+  if (lines.some(l => l.includes('|'))) return '|'
+  if (lines.some(l => l.includes('\t'))) return '\t'
+  if (lines.some(l => l.includes(','))) return ','
+  return ''
+}
+function splitLine(l, d) {
+  let s = l.trim()
+  if (d === '|') {
+    if (s.startsWith('|')) s = s.slice(1)
+    if (s.endsWith('|')) s = s.slice(0, -1)
+    return s.split('|').map(x => x.trim())
+  }
+  if (d === ',') return s.split(',').map(x => x.trim())
+  return s.split(/\t|\s+/).map(x => x.trim())
+}
+const colMeta = (t, name) => t.columns.find(c => c.n.toLowerCase() === name.toLowerCase()) || null
+
+function parseRaw() {
+  const t = byName[S.table]
+  const names = t.columns.map(c => c.n.toLowerCase())
+  const lines = S.raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  if (!lines.length) { S.parsed = null; return }
+
+  const d = pickDelim(lines)
+  const cells0 = splitLine(lines[0], d)
+  const multiCol = cells0.length > 1 || lines.some(l => splitLine(l, d).length > 1)
+
+  let header = false
+  if (multiCol) {
+    const hit = cells0.filter(c => names.includes(c.toLowerCase())).length
+    header = hit >= 1 && !cells0.some(isNumLike)
+  }
+
+  const bodyLines = header ? lines.slice(1) : lines
+  let cols
+  if (!multiCol) {
+    const pkc = t.columns.find(c => c.pk)
+    cols = [{ name: pkc ? pkc.n : 'id', meta: pkc || null }]
+  } else if (header) {
+    cols = cells0.map(c => ({ name: c, meta: colMeta(t, c) }))
+  } else {
+    const width = Math.max(...bodyLines.map(l => splitLine(l, d).length))
+    cols = Array.from({ length: width }, (_, i) => {
+      const c = t.columns[i]
+      return c ? { name: c.n, meta: c } : { name: `第${i + 1}列`, meta: null }
+    })
+  }
+  const rows = bodyLines.map(l => {
+    const cs = splitLine(l, d)
+    while (cs.length < cols.length) cs.push('')
+    return cs.slice(0, cols.length)
+  })
+  S.parsed = { cols, rows, header, single: !multiCol }
+}
+
+function autoPk() {
+  const cols = S.parsed.cols
+  if (S.pkManual && cols.some(c => c.name === S.pk)) return S.pk
+  const cached = byName[S.table].columns.find(c => c.pk)
+  if (cached && cols.some(c => c.name === cached.n)) { S.pkManual = false; return cached.n }
+  const idish = cols.find(c => /(^|_)id$/i.test(c.name))
+  S.pkManual = false
+  return (idish || cols[0]).name
+}
+function pkTag() {
+  const cached = byName[S.table].columns.find(c => c.pk)
+  if (S.pkManual) return '<span class="tag">手动指定</span>'
+  if (cached && cached.n === S.pk) return '<span class="tag ok">表结构主键</span>'
+  if (/(^|_)id$/i.test(S.pk)) return '<span class="tag wr">⚠️ 按字段名猜的，请确认</span>'
+  return '<span class="tag wr">⚠️ 暂用第一列，请确认</span>'
+}
+
+const cellOf = (name, i) => {
+  const ci = S.parsed.cols.findIndex(c => c.name === name)
+  return ci < 0 ? null : S.parsed.rows[i][ci]
+}
+const checkedFields = () => Object.keys(S.updOn).filter(f => S.updOn[f])
+const tgtOf = f => (S.tgt[f] ?? '').trim()
+const effVal = (f, i) => tgtOf(f) !== '' ? tgtOf(f) : (cellOf(f, i) ?? '')
+
+function rowChanges(i) {
+  const flds = checkedFields()
+  if (!flds.length) return false
+  return flds.some(f => {
+    const tv = tgtOf(f)
+    if (tv === '') return true
+    const ov = cellOf(f, i)
+    return ov === null ? true : String(ov) !== tv
+  })
+}
+const includedIdx = () => (S.parsed ? S.parsed.rows.map((_, i) => i).filter(rowChanges) : [])
+function isUniform(f, inc) { return inc.every(i => String(effVal(f, i)) === String(effVal(f, inc[0]))) }
+
+function resolveFmt(inc) {
+  if (!checkedFields().length || !inc.length) return { kind: 'none' }
+  const varying = checkedFields().filter(f => !isUniform(f, inc))
+  if (S.fmt === 'each') return { kind: 'each' }
+  if (S.fmt === 'in')
+    return varying.length ? { kind: 'case', warn: `${varying.join('、')} 各行值不同，IN 写不下，已改成 CASE WHEN` } : { kind: 'in' }
+  if (S.fmt === 'case') return { kind: 'case' }
+  return varying.length ? { kind: 'case', auto: true } : { kind: 'in', auto: true }
+}
+
+function lit(v) {
+  const s = String(v ?? '').trim()
+  if (s === '') return "''"
+  if (/^null$/i.test(s)) return 'NULL'
+  if (isNumLike(s)) return s
+  if (/^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?$/.test(s)) return DIALECTS[S.dia].date(s.replace('T', ' '))
+  return `'${s.replace(/'/g, "''")}'`
+}
+
+function genSql(inc, r) {
+  const t = byName[S.table]
+  const flds = checkedFields()
+  if (!S.parsed) return '-- 先把查询结果贴进来'
+  if (!flds.length) return '-- 左边勾一个要改的字段'
+  if (!inc.length) return '-- 这些行已经是目标值，不用 UPDATE'
+
+  const L = []
+  L.push(`-- ${t.name}${t.comment ? `  ${t.comment}` : ''} · ${inc.length} 行 · 主键 ${S.pk} · ${DIALECTS[S.dia].label}`)
+  L.push('')
+
+  const setList = i => flds.map(f => `  ${qi(f)} = ${lit(effVal(f, i))}`).join(',\n')
+  const pkLit = i => lit(cellOf(S.pk, i))
+
+  if (r.kind === 'each') {
+    inc.forEach(i => {
+      L.push(`UPDATE ${qi(t.name)} SET`)
+      L.push(setList(i))
+      L.push(`WHERE ${qi(S.pk)} = ${pkLit(i)};`, '')
+    })
+  } else if (r.kind === 'in') {
+    L.push(`UPDATE ${qi(t.name)} SET`)
+    L.push(flds.map(f => `  ${qi(f)} = ${lit(effVal(f, inc[0]))}`).join(',\n'))
+    L.push(`WHERE ${qi(S.pk)} IN (${inc.map(pkLit).join(', ')});`)
+  } else {
+    L.push(`UPDATE ${qi(t.name)} SET`)
+    L.push(flds.map(f => {
+      if (isUniform(f, inc)) return `  ${qi(f)} = ${lit(effVal(f, inc[0]))}`
+      return [`  ${qi(f)} = CASE ${qi(S.pk)}`,
+        ...inc.map(i => `    WHEN ${pkLit(i)} THEN ${lit(effVal(f, i))}`),
+        '    END'].join('\n')
+    }).join(',\n'))
+    L.push(`WHERE ${qi(S.pk)} IN (${inc.map(pkLit).join(', ')});`)
+  }
+  return L.join('\n')
+}
+
+function showWork(on) {
+  $('#emptyView').hidden = on
+  $('#workView').hidden = !on
+  $('#workTools').hidden = !on
+  $('#workSep').hidden = !on
+}
+
+function tableOptions() {
+  return tables.map(x =>
+    `<option value="${x.name}" ${x.name === S.table ? 'selected' : ''}>${x.name} — ${x.comment}</option>`).join('')
+}
+
+function renderCfg() {
+  $('#tblSel').innerHTML = tableOptions()
+  $('#tblSelEmpty').innerHTML = tableOptions()
+  $('#diaSeg').innerHTML = Object.entries(DIALECTS).map(([k, d]) =>
+    `<button data-v="${k}" class="${k === S.dia ? 'on' : ''}">${d.label}</button>`).join('')
+  $('#diaSeg').querySelectorAll('button').forEach(b => {
+    b.onclick = () => { S.dia = b.dataset.v; renderCode(); renderFields(); renderPreview() }
+  })
+}
+
+function renderPstat() {
+  const el = $('#pstat')
+  if (!S.parsed) { el.innerHTML = ''; $('#shapeLbl').textContent = ''; return }
+  const p = S.parsed
+  const shape = p.single ? `单列 · ${p.rows.length} 个主键`
+    : `${p.rows.length} 行 × ${p.cols.length} 列${p.header ? ' · 已认表头' : ' · 按列顺序对齐'}`
+  $('#shapeLbl').textContent = shape
+  el.innerHTML = `<span class="lbl">主键</span>
+    <select class="fld" id="pkSel">${p.cols.map(c =>
+      `<option ${c.name === S.pk ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+    <span id="pkTag">${pkTag()}</span>`
+  $('#pkSel').onchange = e => { S.pk = e.target.value; S.pkManual = true; renderPstat(); renderFields(); renderPreview(); renderCode() }
+}
+
+function renderFields() {
+  const el = $('#fields')
+  if (!S.parsed) {
+    el.innerHTML = '<div class="empty">还没有可改的字段</div>'
+    return
+  }
+  const cands = S.parsed.cols.filter(c => c.name !== S.pk)
+  if (!cands.length) {
+    el.innerHTML = '<div class="empty">结果里除了主键没有别的列</div>'
+    return
+  }
+  el.innerHTML = cands.map(c => {
+    const cc = c.meta ? c.meta.c || '' : '表结构里没有这列'
+    return `<div class="prow">
+      <label class="cb"><input type="checkbox" data-f="${esc(c.name)}" ${S.updOn[c.name] ? 'checked' : ''}>
+        <span class="cn">${esc(c.name)}</span></label>
+      <span class="cc">${esc(cc)}</span>
+      <div class="spacer"></div>
+      <input class="fld tgt" data-t="${esc(c.name)}" value="${esc(S.tgt[c.name] ?? '')}"
+             placeholder="留空 = 用粘贴值">
+    </div>`
+  }).join('')
+}
+
+function renderPreview() {
+  const el = $('#preview'), lbl = $('#pvLbl')
+  if (!S.parsed || !checkedFields().length) {
+    lbl.textContent = ''
+    el.innerHTML = '<div class="empty">勾了字段之后，这里对照旧值和新值</div>'
+    return
+  }
+  const flds = checkedFields()
+  const inc = includedIdx()
+  if (!inc.length) {
+    lbl.textContent = '0 行'
+    el.innerHTML = '<div class="band ok">这些行已经是目标值，不用改。</div>'
+    return
+  }
+
+  const cell = (f, i) => {
+    const tv = tgtOf(f), ov = cellOf(f, i), nv = effVal(f, i)
+    if (tv === '') return `<span class="muted">—</span><span class="arrow">→</span><b class="newv">${esc(nv) || "''"}</b>`
+    if (String(ov) === tv) return `<span class="muted mono-c">${esc(ov)}</span><span class="arrow">=</span>`
+    return `<s class="oldv mono-c">${esc(ov)}</s><span class="arrow">→</span><b class="newv">${esc(nv)}</b>`
+  }
+
+  const skipped = S.parsed.rows.length - inc.length
+  lbl.textContent = `${inc.length} / ${S.parsed.rows.length} 行`
+  el.innerHTML = `
+    <div class="scroll"><table class="tbl">
+      <thead><tr><th>${esc(S.pk)}</th>${flds.map(f => `<th>${esc(f)}</th>`).join('')}</tr></thead>
+      <tbody>${inc.map(i => `<tr>
+        <td class="mono-c">${esc(cellOf(S.pk, i))}</td>
+        ${flds.map(f => `<td>${cell(f, i)}</td>`).join('')}
+      </tr>`).join('')}</tbody>
+    </table></div>
+    ${skipped ? `<div class="hint" style="margin-top:8px">另有 ${skipped} 行已经是目标值，没放进 UPDATE。</div>` : ''}`
+}
+
+function renderCode() {
+  const inc = includedIdx(), r = resolveFmt(inc)
+  const sql = genSql(inc, r)
+  $('#code').innerHTML = sqlHi(sql)
+  $('#code').dataset.raw = sql
+  $('#fname').textContent = S.table + '_update_' + S.dia + '.sql'
+  $('#statLbl').textContent = r.kind === 'none' ? ''
+    : (r.kind === 'each' ? `${inc.length} 条` : r.kind === 'in' ? '一条 IN' : '一条 CASE WHEN')
+
+  $('#fmtSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === S.fmt))
+  $('#fmtHint').textContent = r.auto ? `自动用了 ${r.kind === 'in' ? 'IN' : 'CASE WHEN'}` : ''
+
+  const w = $('#warn')
+  const pasteBased = checkedFields().some(f => tgtOf(f) === '' && cellOf(f, 0) !== null)
+  if (r.warn) w.textContent = r.warn
+  else if (/tag wr/.test(pkTag())) w.textContent = '主键是猜的。认错就会改错行，上面可以改。'
+  else if (pasteBased) w.textContent = '有字段没填目标值，会按粘贴里的数字改。'
+  else if (r.kind === 'in') w.textContent = '各行目标值相同，一条 IN 改完。'
+  else if (r.kind === 'case') w.textContent = '各行值不同，一条 CASE WHEN 按主键赋值。'
+  else w.textContent = ''
+}
+
+function render() {
+  const has = !!S.parsed
+  showWork(has)
+  renderCfg()
+  if (has) { renderPstat(); renderFields(); renderPreview(); renderCode() }
+}
+
+function resetParseState() {
+  S.pk = ''; S.pkManual = false; S.updOn = {}; S.tgt = {}; S.touched = false; S.autoDone = false
+}
+
+function applyRaw(text, from) {
+  S.raw = text
+  // 正在打字的那一框不要回写，否则光标每敲一键跳回头
+  if (from !== 'empty') $('#pasteEmpty').value = text
+  if (from !== 'work') $('#paste').value = text
+  parseRaw()
+  syncAfterParse()
+  render()
+}
+
+function onTableChange(name) {
+  S.table = name
+  resetParseState()
+  parseRaw()
+  syncAfterParse()
+  render()
+}
+
+function demoRaw() {
+  return [
+    'id | order_no | status | total',
+    '101 | NO20260826001 | 0 | 99.00',
+    '102 | NO20260826002 | 1 | 199.00',
+    '103 | NO20260826003 | 0 | 59.50',
+    '104 | NO20260826004 | 0 | 128.00',
+    '105 | NO20260826005 | 1 | 45.00',
+    '106 | NO20260826006 | 0 | 210.00',
+  ].join('\n')
+}
+
+function syncAfterParse() {
+  if (!S.parsed) return
+  S.pk = autoPk()
+  if (!S.touched && !S.autoDone) {
+    const st = S.parsed.cols.find(c => c.name.toLowerCase() === 'status')
+    if (st) { S.updOn[st.name] = true; S.tgt[st.name] = '1'; S.autoDone = true }
+  }
+}
+
+$('#tblSel').onchange = e => onTableChange(e.target.value)
+$('#tblSelEmpty').onchange = e => onTableChange(e.target.value)
+$('#fillDemo').onclick = () => { S.table = 'order'; resetParseState(); applyRaw(demoRaw()) }
+$('#fillAgain').onclick = () => { S.table = 'order'; resetParseState(); applyRaw(demoRaw()) }
+$('#clearRaw').onclick = () => {
+  S.raw = ''; S.parsed = null; resetParseState()
+  $('#pasteEmpty').value = ''; $('#paste').value = ''
+  render()
+}
+$('#pasteEmpty').addEventListener('input', e => applyRaw(e.target.value, 'empty'))
+$('#paste').addEventListener('input', e => applyRaw(e.target.value, 'work'))
+$('#fields').addEventListener('change', e => {
+  if (!e.target.dataset.f) return
+  S.updOn[e.target.dataset.f] = e.target.checked
+  S.touched = true
+  renderFields(); renderPreview(); renderCode()
+})
+$('#fields').addEventListener('input', e => {
+  if (!e.target.dataset.t) return
+  S.tgt[e.target.dataset.t] = e.target.value
+  S.touched = true
+  renderPreview(); renderCode()
+})
+$('#fmtSeg').querySelectorAll('button').forEach(b => {
+  b.onclick = () => { S.fmt = b.dataset.v; renderCode() }
+})
+$('#cp').onclick = () => copy($('#code').dataset.raw || '', $('#cp'))
+$('#dl').onclick = () => {
+  const blob = new Blob([$('#code').dataset.raw || ''], { type: 'text/plain;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob); a.download = $('#fname').textContent; a.click()
+  URL.revokeObjectURL(a.href)
+}
+$('#pvHead').onclick = () => $('#pvCard').classList.toggle('on')
+
+render()
+</script>
+</body>
+</html>

@@ -1,0 +1,721 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>连库·扫源码导入 · 码上 CodeNow 原型</title>
+<link rel="stylesheet" href="_theme.css">
+<style>
+  /* 本页专用的小样式。能进 _theme.css 的都进去了，留下的是只有这一页用的 */
+  .frow{ display:flex; gap:10px; flex-wrap:wrap; align-items:center }
+  .frow .fld{ flex:1; min-width:0 }
+  .frow .fld.fix{ flex:0 0 auto; width:90px }
+  label.opt{ display:flex; gap:7px; align-items:center; font-size:13px; color:var(--dim); cursor:pointer; white-space:nowrap }
+  label.opt:hover{ color:var(--txt) }
+  .log{ font:12px/2 var(--mono); max-height:250px; overflow:auto; padding:9px 14px;
+        background:color-mix(in srgb, var(--panel2) 65%, transparent); border-radius:var(--r2) }
+  .log .fp{ color:var(--acc); word-break:break-all }
+  .log .fh{ color:var(--ok) } .log .fn{ color:var(--dimmer) } .log .fs{ color:var(--warn) }
+  .pbar{ height:5px; flex:none; width:150px; border-radius:3px;
+         background:color-mix(in srgb, var(--line) 55%, transparent); overflow:hidden }
+  .pbar i{ display:block; height:100%; width:0;
+           background:linear-gradient(90deg,var(--acc),var(--acc2)); transition:width .16s ease }
+  .flash{ animation:fl .9s ease-out }
+  @keyframes fl{ from{ box-shadow:0 0 0 3px color-mix(in srgb, var(--ok) 45%, transparent) } to{ box-shadow:none } }
+  .tline{ display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+  .tline .tn{ font:600 13.5px/1.3 var(--mono) }
+  .fkline{ display:flex; align-items:center; gap:9px; padding:5px 0; font:12.5px/1.5 var(--mono); flex-wrap:wrap }
+  .fkline .arw{ color:var(--acc); font-size:14px }
+</style>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="dbsrc"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">🗄️ 连接数据库 · 📁 扫描项目源码</div>
+        <div class="sub">PRD v6.0 §6.1 导入表结构的方式二 / 方式三 —— 方式一（粘贴 DDL）在「导入表结构」页</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">原型 · 看交互形态和取舍，不是视觉终稿</span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-in">
+
+        <!-- 两个方式做成 seg 切换，对应 PRD 里 [粘贴] [连库] [扫源码] 三颗 Tab 的后两颗 -->
+        <div class="seg fill" id="modeSeg" style="max-width:460px;margin-bottom:16px">
+          <button class="on" data-m="db">🗄️ 方式二 · 连接数据库</button>
+          <button data-m="scan">📁 方式三 · 扫描项目源码</button>
+        </div>
+
+        <!-- ================================================================
+             模式一：连接数据库
+             流程：填连接信息 → 连接并读取（只拉表清单）→ 勾选 → 导入
+             ================================================================ -->
+        <section id="mDb">
+          <div class="split even">
+            <div class="col">
+              <div class="card">
+                <i class="corner tl"></i>
+                <div class="chead"><span class="dot"></span><span class="h">连接信息</span>
+                  <span class="who">MVP 仅 MySQL · 只读</span>
+                  <div class="spacer"></div>
+                  <button class="mini" id="dbFill">填示例</button>
+                </div>
+                <div class="cbody stack">
+                  <div class="frow">
+                    <span class="lbl">类型</span>
+                    <!-- 禁用的控件必须给出「为什么」（CLAUDE.md）—— title 写清排期原因 -->
+                    <div class="seg" id="dbTypeSeg">
+                      <button class="on">MySQL</button>
+                      <button disabled title="PRD Phase 6 只做 MySQL；PG 的 information_schema 结构不同，排后续版本">PostgreSQL</button>
+                      <button disabled title="Oracle 注释要另查 ALL_COL_COMMENTS、类型词也不同，排后续版本">Oracle</button>
+                    </div>
+                  </div>
+                  <div class="frow">
+                    <input class="fld" id="fHost" value="localhost" placeholder="主机">
+                    <input class="fld fix" id="fPort" value="3306" placeholder="端口">
+                  </div>
+                  <div class="frow">
+                    <input class="fld" id="fUser" value="root" placeholder="用户名">
+                    <input class="fld" id="fPass" type="password" value="root1234" placeholder="密码">
+                  </div>
+                  <div class="frow">
+                    <input class="fld mono" id="fDb" value="test_db" placeholder="数据库名">
+                    <span class="hint" style="flex-basis:100%">库名手填 —— 列出实例里所有库需要额外权限，MVP 不做库下拉</span>
+                  </div>
+                  <div class="frow" style="justify-content:flex-end;margin-top:2px">
+                    <span class="hint" id="connectHint"></span>
+                    <button class="primary" id="btnConnect">🔌 连接并读取</button>
+                  </div>
+                  <div class="band info">连上后本次会话<b>只读</b>：所有查询都是 information_schema 的元数据 SELECT，
+                    不在你的库里执行任何写操作。</div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="chead"><span class="h">最近连接</span>
+                  <div class="spacer"></div><span class="who">只记地址 · 不记密码</span></div>
+                <div class="cbody stack">
+                  <div class="frow">
+                    <button class="chip" data-fill="localhost|3306|root|test_db"><i>本地</i>&nbsp;localhost:3306/test_db</button>
+                    <button class="chip" data-fill="192.168.10.20|3306|dev_ruoyi|ruoyi_shop"><i>测试</i>&nbsp;192.168.10.20/ruoyi_shop</button>
+                    <button class="chip" data-fill="rm-bp18x.mysql.rds.aliyuncs.com|3306|ro_reader|mall_prod"><i>生产</i>&nbsp;rm-bp18x…/mall_prod</button>
+                  </div>
+                  <div class="band">点历史只回填<b>主机 / 端口 / 用户 / 库名</b>四项，密码框永远是空的 ——
+                    密码不进连接列表。测试/本地可记系统凭据；生产每次现输。</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col">
+              <div id="dbStatus"></div>
+
+              <div class="card" id="dbListCard" style="display:none">
+                <div class="chead"><span class="dot"></span><span class="h">表清单</span>
+                  <span class="who" id="dbWho"></span>
+                  <div class="spacer"></div>
+                  <input class="fld" id="dbFilter" placeholder="过滤表名 / 注释" style="max-width:190px;padding:5px 9px">
+                </div>
+                <div class="cbody" style="padding:0">
+                  <div class="acts" style="border-top:0;border-bottom:1px solid var(--line)">
+                    <button class="mini" data-sel="all">全选</button>
+                    <button class="mini" data-sel="new">只选新增</button>
+                    <button class="mini" data-sel="none">清空</button>
+                    <div class="spacer" style="flex:1"></div>
+                    <span class="hint" id="selInfo"></span>
+                  </div>
+                  <div class="scroll lg">
+                    <table class="tbl">
+                      <thead><tr>
+                        <th style="width:36px;text-align:center"></th>
+                        <th style="width:170px">表名</th><th>注释</th>
+                        <th style="width:64px">字段</th><th style="width:76px">状态</th>
+                        <th style="width:56px">导入</th>
+                      </tr></thead>
+                      <tbody id="dbRows"></tbody>
+                    </table>
+                  </div>
+                </div>
+                <div class="acts">
+                  <button class="primary" id="btnImportDb">导入勾选的表</button>
+                  <div class="pbar" id="dbProg" style="display:none"><i></i></div>
+                  <span class="hint" id="importHint">先拉清单后拉字段：不勾的表一个字段都不会去取</span>
+                </div>
+              </div>
+
+              <div class="card" id="dbFkCard" style="display:none">
+                <div class="chead"><span class="h">外键预览</span>
+                  <div class="spacer"></div><span class="who">随勾选过滤 · ✅ 真约束 · ⚠️ 命名推断</span></div>
+                <div class="cbody" id="dbFks"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================
+             模式二：扫描项目源码
+             流程：选目录 → 逐文件扫（日志可见）→ 按可信度合并成表清单 → 勾选导入
+             ================================================================ -->
+        <section id="mScan" hidden>
+          <div class="split even">
+            <div class="col">
+              <div class="card">
+                <i class="corner tl"></i>
+                <div class="chead"><span class="dot"></span><span class="h">项目目录</span>
+                  <span class="who">本机扫描 · 不联网</span></div>
+                <div class="cbody stack">
+                  <div class="frow">
+                    <input class="fld mono" id="scanPath" placeholder="还没选 —— 点右边按钮或挑个示例" readonly>
+                    <button class="primary" id="btnPick">📁 选择项目目录…</button>
+                  </div>
+                  <div class="frow">
+                    <span class="lbl">示例</span>
+                    <button class="chip" data-path="demo"><i>✔</i>&nbsp;mall-demo（Java 项目）</button>
+                    <button class="chip" data-path="empty"><i>✗</i>&nbsp;没有源码的目录</button>
+                    <span class="hint">原型用假目录演示；真实版走 Tauri dialog 选真目录</span>
+                  </div>
+                  <div class="frow" style="gap:16px;padding-top:2px">
+                    <label class="opt"><input type="checkbox" id="optSql" checked> *.sql 脚本</label>
+                    <label class="opt"><input type="checkbox" id="optEnt" checked> @Entity 实体类</label>
+                    <label class="opt"><input type="checkbox" id="optXml" checked> MyBatis XML</label>
+                  </div>
+                  <div class="hint">固定排除 target / node_modules / .git / dist / build；单文件 &gt; 2MB、总数 &gt; 5000 直接停下提示，不硬扫。</div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="chead"><span class="h">三类来源 · 可信度从高到低</span></div>
+                <div class="cbody stack">
+                  <div class="band ok"><b>*.sql 脚本</b> —— 真 CREATE TABLE，字段/主键/外键/注释最全，跟「粘贴 DDL」走同一套解析器。</div>
+                  <div class="band info"><b>@Entity 实体类</b> —— 从 @Column / 驼峰转下划线推字段和注释；类型映射是猜的，但实体一般照着表写，可信。</div>
+                  <div class="band warn"><b>Mapper XML</b> —— 只认 resultMap / insert 里<b>出现过的列</b>，没出现的拿不到。
+                    只有 XML 来源的表标 ⚠️<b>不完整</b> 并默认不勾 —— 少字段是安静的错，比报错难查。</div>
+                  <div class="band">同名表被多个来源命中时按上面的顺序合并，来源记进 <span class="mono">data_source</span>
+                    （PRD §7.3 的 <span class="mono">UNIQUE(table_name, data_source)</span> 就是给这留的位）。</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col">
+              <div id="scanStatus"></div>
+
+              <div class="card" id="scanLogCard" style="display:none">
+                <div class="chead"><span class="h">扫描过程</span>
+                  <div class="spacer"></div><span class="who" id="scanWho"></span></div>
+                <div class="cbody"><div class="log" id="scanLog"></div></div>
+              </div>
+
+              <div class="card" id="scanStatCard" style="display:none">
+                <div class="chead"><span class="dot"></span><span class="h">扫描统计</span></div>
+                <div class="cbody"><div class="stats" id="scanStats"></div></div>
+              </div>
+
+              <div class="card" id="scanListCard" style="display:none">
+                <div class="chead"><span class="h">识别出的表</span>
+                  <span class="who" id="scanListWho"></span>
+                  <div class="spacer"></div><span class="auto">第一张已展开 · ⚠️ 不完整的默认没勾</span></div>
+                <div class="cbody" style="padding:0">
+                  <div class="acts" style="border-top:0;border-bottom:1px solid var(--line)">
+                    <button class="mini" data-ssel="all">全选</button>
+                    <button class="mini" data-ssel="new">只选新增</button>
+                    <button class="mini" data-ssel="complete">选完整表</button>
+                    <button class="mini" data-ssel="none">清空</button>
+                    <div class="spacer" style="flex:1"></div>
+                    <span class="hint" id="sselInfo"></span>
+                  </div>
+                  <div style="padding:13px 15px" id="scanTables"></div>
+                </div>
+                <div class="acts">
+                  <button class="primary" id="btnImportScan">导入勾选的表</button>
+                  <div class="pbar" id="scanProg" style="display:none"><i></i></div>
+                  <span class="hint">来源和缺失都会记进缓存，速查页能看到每张表从哪来的</span>
+                </div>
+              </div>
+
+              <div class="card" id="scanFkCard" style="display:none">
+                <div class="chead"><span class="h">外键预览</span>
+                  <div class="spacer"></div><span class="who">✅ 来自 SQL 脚本 · ⚠️ 命名推断</span></div>
+                <div class="cbody" id="scanFks"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 两种方式共享的设计说明：评审重点看这里 -->
+        <div class="card" style="margin-top:16px">
+          <i class="corner br"></i>
+          <div class="chead"><span class="dot"></span><span class="h">设计取舍 · 待你拍板</span>
+            <span class="who">PRD §6.1 / §7.6 / §7.8</span></div>
+          <div class="cbody stack" style="gap:8px">
+            <div class="band"><b>1 · 密码不进连接列表。</b>历史只存主机 / 端口 / 库名 / 用户。测试/本地可记系统凭据；生产每次现输。</div>
+            <div class="band"><b>2 · 只读边界。</b>MVP 放行 MySQL 且整个会话只跑 information_schema 元数据查询，
+              连上后界面明示「只读」。PG / Oracle 禁用并写明原因，有真需求再开。</div>
+            <div class="band"><b>3 · 两步拉取。</b>先一次查询拿全量<b>表清单</b>，勾选后才逐表拉字段，
+              不勾的不取 —— 这是 PRD §7.8「首次导入 50 张 &lt; 10 秒」的达成方式。</div>
+            <div class="band warn"><b>4 · 增量语义待拍板。</b>已缓存的表现在标「覆盖」，导入即整表替换（跟方式一一致）。
+              PRD §7.6 还提了「无变化自动跳过」，那要做字段级 diff —— 值不值？</div>
+            <div class="band warn"><b>5 · 扫描可信度顺序：*.sql &gt; @Entity &gt; Mapper XML。</b>
+              只有 XML 来源的表标不完整、默认不勾 —— 跟外键两级可信度同一个哲学：推断出来的东西不许悄悄混进结果。</div>
+            <div class="band"><b>6 · 扫描防护。</b>跳过二进制和超大文本、文件数上限、固定排除构建目录；
+              超限停下来让你缩小范围，绝不把 IDE 卡死。</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script src="_data.js"></script>
+<script>
+const { esc, bindFolds } = UI
+const $ = s => document.querySelector(s)
+const $$ = s => [...document.querySelectorAll(s)]
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+const EXISTING = new Set(DATA.tables.map(t => t.name))
+
+/* ---------- 种子数据 ----------
+   已缓存的表就是 _data.js 那 7 张。连库场景里它们都在目标库里 → 标「覆盖」；
+   再造 4 张缓存里没有的 → 标「新增」。评审看到的两类状态都有，不用脑补。 */
+const T = (name, comment, javaClass, columns) => ({ name, comment, javaClass, columns })
+const C = (n, t, j, c, o = {}) => ({ n, t, j, c, pk: o.pk || 0, ai: o.ai || 0, nn: o.nn || 0, d: o.d || '' })
+
+const DB_EXTRA = [
+  T('payment', '支付流水表', 'Payment', [
+    C('id', 'BIGINT', 'Long', '主键', { pk: 1, ai: 1, nn: 1 }),
+    C('order_id', 'BIGINT', 'Long', '所属订单', { nn: 1 }),
+    C('pay_no', 'VARCHAR(64)', 'String', '第三方流水号', { nn: 1 }),
+    C('amount', 'DECIMAL(12,2)', 'BigDecimal', '支付金额', { nn: 1 }),
+    C('status', 'TINYINT', 'Integer', '状态 0待支付 1成功 2失败', { nn: 1, d: '0' }),
+    C('pay_time', 'DATETIME', 'LocalDateTime', '支付时间'),
+    C('create_time', 'DATETIME', 'LocalDateTime', '创建时间', { nn: 1, d: 'CURRENT_TIMESTAMP' }),
+  ]),
+  T('coupon', '优惠券表', 'Coupon', [
+    C('id', 'BIGINT', 'Long', '主键', { pk: 1, ai: 1, nn: 1 }),
+    C('user_id', 'BIGINT', 'Long', '所属用户', { nn: 1 }),
+    C('code', 'VARCHAR(32)', 'String', '优惠码', { nn: 1 }),
+    C('amount', 'DECIMAL(10,2)', 'BigDecimal', '面额', { nn: 1 }),
+    C('min_spend', 'DECIMAL(10,2)', 'BigDecimal', '使用门槛', { d: '0.00' }),
+    C('expire_at', 'DATETIME', 'LocalDateTime', '过期时间'),
+    C('used', 'TINYINT(1)', 'Boolean', '是否已使用', { nn: 1, d: '0' }),
+    C('create_time', 'DATETIME', 'LocalDateTime', '发放时间', { nn: 1, d: 'CURRENT_TIMESTAMP' }),
+  ]),
+  T('user_address', '收货地址表', 'UserAddress', [
+    C('id', 'BIGINT', 'Long', '主键', { pk: 1, ai: 1, nn: 1 }),
+    C('user_id', 'BIGINT', 'Long', '所属用户', { nn: 1 }),
+    C('receiver', 'VARCHAR(40)', 'String', '收货人', { nn: 1 }),
+    C('phone', 'VARCHAR(20)', 'String', '联系电话', { nn: 1 }),
+    C('detail', 'VARCHAR(200)', 'String', '详细地址', { nn: 1 }),
+    C('is_default', 'TINYINT(1)', 'Boolean', '默认地址', { nn: 1, d: '0' }),
+    C('create_time', 'DATETIME', 'LocalDateTime', '创建时间', { nn: 1, d: 'CURRENT_TIMESTAMP' }),
+  ]),
+  T('stock_log', '库存流水表', 'StockLog', [
+    C('id', 'BIGINT', 'Long', '主键', { pk: 1, ai: 1, nn: 1 }),
+    C('product_id', 'BIGINT', 'Long', '商品', { nn: 1 }),
+    C('change_qty', 'INT', 'Integer', '变动数量 正入负出', { nn: 1 }),
+    C('reason', 'VARCHAR(60)', 'String', '变动原因'),
+    C('create_time', 'DATETIME', 'LocalDateTime', '发生时间', { nn: 1, d: 'CURRENT_TIMESTAMP' }),
+  ]),
+]
+const DB_TABLES = DATA.tables.concat(DB_EXTRA)
+const dbSet = new Set(DB_TABLES.map(t => t.name))
+
+/* 库里的外键 = 已知约束 + 对新表的命名推断（推断永远发生在本地，库里查不到的 */
+const DB_FKS = [
+  ...DATA.fks.filter(f => dbSet.has(f.from) && dbSet.has(f.to)),
+  { name: 'fk_payment_order', from: 'payment', fromCol: 'order_id', to: 'order', toCol: 'id', conf: 'constraint' },
+  { name: '', from: 'coupon', fromCol: 'user_id', to: 'user', toCol: 'id', conf: 'naming' },
+  { name: '', from: 'user_address', fromCol: 'user_id', to: 'user', toCol: 'id', conf: 'naming' },
+  { name: '', from: 'stock_log', fromCol: 'product_id', to: 'product', toCol: 'id', conf: 'naming' },
+]
+
+/* 扫描场景的命中文件与合并结果。order / payment 故意只有 XML 来源，
+   用真实的「缺字段」演示 ⚠️ 不完整标记，而不是靠嘴说。 */
+const DEMO_PATH = 'E:\\workspace\\mall-demo'
+const EMPTY_PATH = 'E:\\照片整理\\2025春节'
+
+const SCAN_HITS = [
+  { p: 'src/main/resources/sql/schema.sql', k: 'sql', hit: 'CREATE TABLE ×2 → product、order_item' },
+  { p: 'src/main/java/com/mall/entity/User.java', k: 'ent', hit: '@Entity @Table(name="user") → user' },
+  { p: 'src/main/java/com/mall/entity/Coupon.java', k: 'ent', hit: '@Entity → coupon（新表）' },
+  { p: 'src/main/java/com/mall/entity/StockLog.java', k: 'ent', hit: '@Entity → stock_log（新表）' },
+  { p: 'src/main/resources/mapper/OrderMapper.xml', k: 'xml', hit: 'resultMap → order（只见 4 列）' },
+  { p: 'src/main/resources/mapper/PaymentMapper.xml', k: 'xml', hit: 'resultMap → payment（新表 · 只有 4 列）' },
+]
+const SCAN_TOTAL_FILES = 1284
+
+function scanTables() {
+  const sqlOn = $('#optSql').checked, entOn = $('#optEnt').checked, xmlOn = $('#optXml').checked
+  const out = []
+  if (sqlOn) for (const n of ['product', 'order_item']) {
+    const t = DATA.byName[n]
+    out.push({ ...t, srcs: ['SQL 脚本'], complete: true })
+  }
+  if (entOn) {
+    out.push({ ...DATA.byName.user, srcs: ['@Entity'], complete: true })
+    out.push({ ...DB_EXTRA[1], srcs: ['@Entity'], complete: true })   // coupon
+    out.push({ ...DB_EXTRA[3], srcs: ['@Entity'], complete: true })   // stock_log
+  }
+  if (xmlOn) {
+    // XML 只认出现过的列：故意给残缺视图，缺的字段列在 missing 里展示
+    const ord = DATA.byName.order
+    out.push({ ...ord, columns: ord.columns.slice(0, 4), srcs: ['Mapper XML'],
+      complete: false, missing: ['status', 'create_time'] })
+    out.push({ ...DB_EXTRA[0], columns: DB_EXTRA[0].columns.slice(0, 4), srcs: ['Mapper XML'],
+      complete: false, missing: ['status', 'pay_time', 'create_time'] })
+  }
+  return out
+}
+const SCAN_FKS = [
+  { name: 'fk_order_item_order', from: 'order_item', fromCol: 'order_id', to: 'order', toCol: 'id', conf: 'constraint' },
+  { name: 'fk_order_item_product', from: 'order_item', fromCol: 'product_id', to: 'product', toCol: 'id', conf: 'constraint' },
+  { name: '', from: 'coupon', fromCol: 'user_id', to: 'user', toCol: 'id', conf: 'naming' },
+  { name: '', from: 'stock_log', fromCol: 'product_id', to: 'product', toCol: 'id', conf: 'naming' },
+  { name: '', from: 'payment', fromCol: 'order_id', to: 'order', toCol: 'id', conf: 'naming' },
+]
+
+/* ---------- 公共小件 ---------- */
+const isNew = name => !EXISTING.has(name)
+const stTag = name => isNew(name)
+  ? '<span class="tag ok">新增</span>'
+  : '<span class="tag wr">覆盖</span>'
+
+function fkHtml(fks) {
+  if (!fks.length) return '<div class="hint">勾选的表之间没有发现关联</div>'
+  return fks.map(f => `<div class="fkline">
+      <span>${esc(f.from)}.${esc(f.fromCol)}</span><span class="arw">→</span>
+      <span>${esc(f.to)}.${esc(f.toCol)}</span>
+      ${f.conf === 'constraint'
+        ? `<span class="tag ok">✅ 外键约束${f.name ? ' ' + esc(f.name) : ''}</span>`
+        : '<span class="tag wr">⚠️ 命名推断 · 默认不参与 JOIN</span>'}
+    </div>`).join('')
+}
+
+/* ---------- 模式切换 ---------- */
+$$('#modeSeg button').forEach(b => {
+  b.onclick = () => {
+    $$('#modeSeg button').forEach(x => x.classList.toggle('on', x === b))
+    $('#mDb').hidden = b.dataset.m !== 'db'
+    $('#mScan').hidden = b.dataset.m !== 'scan'
+  }
+})
+
+/* ================= 模式一：连接数据库 ================= */
+let connected = false, dbBusy = false
+const dbSel = new Set()
+
+$('#dbFill').onclick = () => {
+  $('#fHost').value = 'localhost'; $('#fPort').value = '3306'
+  $('#fUser').value = 'root'; $('#fPass').value = 'root1234'; $('#fDb').value = 'test_db'
+}
+
+$$('.chip[data-fill]').forEach(ch => {
+  ch.onclick = () => {
+    const [h, p, u, d] = ch.dataset.fill.split('|')   // 注意没有第 4 格之后的密码 —— 故意的
+    $('#fHost').value = h; $('#fPort').value = p; $('#fUser').value = u; $('#fDb').value = d
+    $('#fPass').value = ''
+    $('#connectHint').textContent = '已回填地址，密码请现输'
+    $('#fPass').focus()
+  }
+})
+
+$('#btnConnect').onclick = async () => {
+  if (dbBusy) return
+  const need = [['fHost', '主机'], ['fPort', '端口'], ['fUser', '用户名'], ['fPass', '密码'], ['fDb', '数据库名']]
+  const miss = need.filter(([id]) => !$( '#' + id).value.trim())
+  if (miss.length) {
+    miss.forEach(([id]) => $( '#' + id).classList.add('bad'))
+    setTimeout(() => miss.forEach(([id]) => $( '#' + id).classList.remove('bad')), 1600)
+    $('#dbStatus').innerHTML = `<div class="band err"><b>还差 ${miss.length} 项：</b>${miss.map(([, l]) => l).join('、')} 不能为空</div>`
+    return
+  }
+
+  dbBusy = true
+  const btn = $('#btnConnect'), old = btn.textContent
+  btn.disabled = true; btn.textContent = '⏳ 正在连接…'
+  await sleep(650)
+
+  connected = true
+  btn.disabled = false; btn.textContent = old
+  $('#dbListCard').style.display = ''
+  $('#dbWho').textContent = `${$('#fDb').value.trim()}@${$('#fHost').value.trim()}`
+  DB_TABLES.forEach(t => dbSel.add(t.name))       // 默认全选：多数场景就是要全量
+  renderDbRows()
+  $('#dbStatus').innerHTML = `<div class="band ok flash" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <b>✓ 已连接 MySQL 8.0.36 · ${esc($('#fDb').value)} · ${DB_TABLES.length} 张表 · 0.42s</b>
+    <div class="spacer" style="flex:1"></div><span class="tag hi">本次会话只读</span></div>`
+  dbBusy = false
+}
+
+function renderDbRows() {
+  const kw = $('#dbFilter').value.trim().toLowerCase()
+  const rows = DB_TABLES.filter(t =>
+    !kw || t.name.includes(kw) || (t.comment || '').toLowerCase().includes(kw))
+  $('#dbRows').innerHTML = rows.map(t => `
+    <tr data-t="${esc(t.name)}">
+      <td style="text-align:center"><input type="checkbox" ${dbSel.has(t.name) ? 'checked' : ''}></td>
+      <td class="mono">${esc(t.name)}</td>
+      <td class="muted">${esc(t.comment || '—')}</td>
+      <td class="num">${t.columns.length}</td>
+      <td>${stTag(t.name)}</td>
+      <td class="mono muted ip-st"></td>
+    </tr>`).join('')
+  $$('#dbRows input[type=checkbox]').forEach(cb => {
+    cb.onchange = () => {
+      const n = cb.closest('tr').dataset.t
+      cb.checked ? dbSel.add(n) : dbSel.delete(n)
+      updateDbSel()
+    }
+  })
+  updateDbSel()
+}
+
+function updateDbSel() {
+  $('#selInfo').textContent = `已勾选 ${dbSel.size} / ${DB_TABLES.length}`
+  const btn = $('#btnImportDb')
+  btn.disabled = !dbSel.size || !connected
+  btn.textContent = dbSel.size ? `导入勾选的 ${dbSel.size} 张表` : '先勾选要导入的表'
+  // 外键预览跟着勾选走：两端至少有一端被勾中才显示
+  const rel = DB_FKS.filter(f => dbSel.has(f.from) || dbSel.has(f.to))
+  $('#dbFkCard').style.display = connected && rel.length ? '' : 'none'
+  $('#dbFks').innerHTML = fkHtml(rel)
+}
+
+$('#dbFilter').oninput = () => renderDbRows()
+$$('#dbListCard [data-sel]').forEach(b => {
+  b.onclick = () => {
+    const m = b.dataset.sel
+    dbSel.clear()
+    if (m === 'all') DB_TABLES.forEach(t => dbSel.add(t.name))
+    if (m === 'new') DB_TABLES.forEach(t => { if (isNew(t.name)) dbSel.add(t.name) })
+    renderDbRows()
+  }
+})
+
+/* 导入动画：逐行点亮 + 进度条。真实实现是逐表 SELECT，节奏跟这个差不多 */
+$('#btnImportDb').onclick = async () => {
+  if (dbBusy || !dbSel.size) return
+  dbBusy = true
+  const names = [...dbSel]
+  const prog = $('#dbProg'); prog.style.display = ''; prog.firstElementChild.style.width = '0%'
+  let doneNew = 0
+  for (let i = 0; i < names.length; i++) {
+    await sleep(120)
+    if (isNew(names[i])) doneNew++
+    const row = $(`#dbRows tr[data-t="${CSS.escape(names[i])}"]`)
+    if (row) row.querySelector('.ip-st').innerHTML = '<span class="ok">✓</span>'
+    prog.firstElementChild.style.width = Math.round((i + 1) / names.length * 100) + '%'
+  }
+  const cov = names.length - doneNew
+  const skipped = DB_TABLES.length - names.length
+  const naming = DB_FKS.filter(f => f.conf === 'naming'
+    && names.includes(f.from)).length
+  $('#dbStatus').innerHTML =
+    `<div class="stack">
+      <div class="band ok flash"><b>✓ 导入完成：新增 ${doneNew} 张 · 覆盖 ${cov} 张（整表替换）</b>
+        ${skipped ? ` · 跳过未勾选的 ${skipped} 张` : ''}</div>
+      ${naming ? `<div class="band warn">${naming} 条关系是命名推断（⚠️ 默认不参与 JOIN），
+        生成 SQL 时可在关联确认面板里逐条核实。</div>` : ''}
+    </div>`
+  dbBusy = false
+}
+
+/* ================= 模式二：扫描项目源码 ================= */
+let scanBusy = false, lastPath = ''
+const scanSel = new Set()
+let scanResult = []
+
+function pickPath(kind) {
+  lastPath = kind === 'empty' ? EMPTY_PATH : DEMO_PATH
+  $('#scanPath').value = lastPath
+  runScan()
+}
+$('#btnPick').onclick = () => pickPath('demo')
+$$('.chip[data-path]').forEach(ch => { ch.onclick = () => pickPath(ch.dataset.path) })
+
+async function runScan() {
+  if (scanBusy) return
+  scanBusy = true
+  scanSel.clear(); scanResult = []
+  ;['#scanStatCard', '#scanListCard', '#scanFkCard'].forEach(s => { $(s).style.display = 'none' })
+  $('#scanStatus').innerHTML = ''
+  const log = $('#scanLog'); log.innerHTML = ''
+  $('#scanLogCard').style.display = ''
+  $('#scanWho').textContent = lastPath
+
+  const put = html => { log.insertAdjacentHTML('beforeend', html + '<br>'); log.scrollTop = log.scrollHeight }
+
+  put(`<span class="fn">遍历 ${esc(lastPath)} …</span>`)
+  await sleep(420)
+  put(`共 ${SCAN_TOTAL_FILES.toLocaleString()} 个文件，跳过 target / node_modules / .git / dist（<span class="fn">1,102 个</span>）`)
+
+  if (lastPath === EMPTY_PATH) {
+    await sleep(300)
+    put('<span class="fs">没有命中任何 *.sql / @Entity / Mapper XML</span>')
+    $('#scanStatus').innerHTML = `<div class="band err"><b>❌ 这个目录里没有可识别的表结构来源。</b>
+      它得是个 Java / Web 项目根目录（往下翻得到 src/ 和 pom.xml 那种）。换个目录试试。</div>`
+    scanBusy = false
+    return
+  }
+
+  const on = { sql: $('#optSql').checked, ent: $('#optEnt').checked, xml: $('#optXml').checked }
+  const cnt = { sql: 0, ent: 0, xml: 0 }, K = { sql: 'SQL 脚本', ent: '实体类', xml: 'Mapper XML' }
+  for (const h of SCAN_HITS) {
+    await sleep(180)
+    if (!on[h.k]) {
+      put(`<span class="fn">· ${esc(h.p)}</span> <span class="fs">（${K[h.k]}选项没勾，跳过）</span>`)
+      continue
+    }
+    cnt[h.k]++
+    put(`<span class="fp">${esc(h.p)}</span> — <span class="fh">${esc(h.hit)}</span>`)
+  }
+
+  scanResult = scanTables().sort((a, b) =>
+    (b.complete - a.complete) || a.name.localeCompare(b.name))   // 完整的排前面，残缺的沉底但不藏
+  if (!scanResult.length) {
+    $('#scanStatus').innerHTML = '<div class="band err">三类来源都没勾 —— 至少留一类再扫。</div>'
+    scanBusy = false
+    return
+  }
+  put(`<span class="fh">完成：${scanResult.length} 张表 · 0.83s</span>`)
+
+  const nFiles = Object.values(cnt).reduce((a, b) => a + b, 0)
+  $('#scanStats').innerHTML = [
+    ['遍历文件', SCAN_TOTAL_FILES.toLocaleString(), ''], ['SQL 脚本', cnt.sql, 'ok'],
+    ['实体类', cnt.ent, ''], ['Mapper XML', cnt.xml, cnt.xml ? 'warn' : ''],
+    ['解析出表', scanResult.length, 'acc'],
+  ].map(([t, v, k]) => `<div class="stat ${k}"><div class="t">${t}</div><div class="v">${v}</div></div>`).join('')
+  $('#scanStatCard').style.display = ''
+
+  scanResult.forEach(t => { if (t.complete) scanSel.add(t.name) })   // 不完整的不默认勾
+  renderScanList()
+  $('#scanStatus').innerHTML = (() => {
+    const inc = scanResult.filter(t => !t.complete)
+    return `<div class="band ok flash"><b>✓ 扫到 ${scanResult.length} 张表</b>
+      ${inc.length ? `，其中 ${inc.length} 张只有 Mapper XML 来源（⚠️ 不完整，默认没勾）：${inc.map(t => t.name).join('、')}` : '，全部字段完整'}</div>`
+  })()
+  scanBusy = false
+}
+
+function renderScanList() {
+  $('#scanListCard').style.display = ''
+  $('#scanListWho').textContent = `${scanResult.length} 张`
+  $('#scanTables').innerHTML = scanResult.map((t, i) => `
+    <div class="fold ${i === 0 ? 'on' : ''}" data-t="${esc(t.name)}">
+      <div class="fold-h">
+        <span class="caret">▶</span>
+        <input type="checkbox" ${scanSel.has(t.name) ? 'checked' : ''}
+          ${t.complete ? '' : 'title="只有 Mapper XML 来源，字段不全 —— 想清楚再勾"'}
+          style="transform:scale(1.15)">
+        <div class="tline"><span class="tn">${esc(t.name)}</span>
+          <span class="hint">${esc(t.comment || '（没有表注释）')}</span></div>
+        <div class="spacer" style="flex:1"></div>
+        ${t.srcs.map(s => `<span class="tag ${s === 'SQL 脚本' ? 'ok' : s === '@Entity' ? 'hi' : 'wr'}">${s}</span>`).join('')}
+        <span class="tag">${t.columns.length} 字段</span>
+        <span class="tag">${esc(t.javaClass)}.java</span>
+        ${stTag(t.name)}
+        ${t.complete ? '' : '<span class="tag no">⚠️ 不完整</span>'}
+        <span class="ip-st mono muted"></span>
+      </div>
+      <div class="fold-b" style="padding:0">
+        ${t.complete ? '' : `<div class="band warn" style="margin:12px 15px 0">只有 Mapper XML 来源 —— resultMap 里出现过
+          ${t.columns.length} 列，其余拿不到（缺：${esc((t.missing || []).join('、'))}）。
+          补全办法：把建表语句粘到「导入表结构」，或连一次数据库。</div>`}
+        <div class="scroll"><table class="tbl">
+          <thead><tr><th style="width:150px">字段</th><th style="width:170px">类型</th>
+            <th style="width:70px">主键</th><th style="width:66px">必填</th><th>注释</th></tr></thead>
+          <tbody>${t.columns.map(c => `<tr>
+            <td class="mono">${esc(c.n)}</td>
+            <td class="mono muted">${esc(c.t)}</td>
+            <td>${c.pk ? '<span class="tag pk">PK</span>' : ''}</td>
+            <td>${c.nn ? '<span class="tag">NOT NULL</span>' : '<span class="muted">—</span>'}</td>
+            <td>${c.c ? esc(c.c) : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody>
+        </table></div>
+      </div>
+    </div>`).join('')
+  bindFolds($('#scanTables'))
+  $$('#scanTables .fold-h input[type=checkbox]').forEach(cb => {
+    cb.onchange = () => {
+      const n = cb.closest('.fold').dataset.t
+      cb.checked ? scanSel.add(n) : scanSel.delete(n)
+      updateScanSel()
+    }
+  })
+  updateScanSel()
+}
+
+function updateScanSel() {
+  $('#sselInfo').textContent = `已勾选 ${scanSel.size} / ${scanResult.length}`
+  const btn = $('#btnImportScan')
+  btn.disabled = !scanSel.size
+  btn.textContent = scanSel.size ? `导入勾选的 ${scanSel.size} 张表` : '先勾选要导入的表'
+  const rel = SCAN_FKS.filter(f => scanSel.has(f.from) || scanSel.has(f.to))
+  $('#scanFkCard').style.display = scanResult.length && rel.length ? '' : 'none'
+  $('#scanFks').innerHTML = fkHtml(rel)
+}
+
+$$('#scanListCard [data-ssel]').forEach(b => {
+  b.onclick = () => {
+    const m = b.dataset.ssel
+    scanSel.clear()
+    if (m === 'all') scanResult.forEach(t => scanSel.add(t.name))
+    if (m === 'new') scanResult.forEach(t => { if (isNew(t.name)) scanSel.add(t.name) })
+    if (m === 'complete') scanResult.forEach(t => { if (t.complete) scanSel.add(t.name) })
+    renderScanList()
+  }
+})
+
+/* 三个来源开关：改完立刻按新口径重算结果（日志保留原样，那是历史） */
+;['#optSql', '#optEnt', '#optXml'].forEach(s => {
+  $(s).onchange = () => {
+    // 只有已经扫出结果（示例目录）时才按新口径重算；没扫过 / 空目录场景不动
+    if (!lastPath || lastPath === EMPTY_PATH || !scanResult.length) return
+    scanSel.clear()
+    scanResult = scanTables().sort((a, b) => (b.complete - a.complete) || a.name.localeCompare(b.name))
+    if (!scanResult.length) {
+      $('#scanListCard').style.display = 'none'; $('#scanFkCard').style.display = 'none'
+      $('#scanStatus').innerHTML = '<div class="band warn">当前勾选的来源里一张表都认不出 —— 全关了就等于没扫。</div>'
+      return
+    }
+    scanResult.forEach(t => { if (t.complete) scanSel.add(t.name) })
+    renderScanList()
+  }
+})
+
+$('#btnImportScan').onclick = async () => {
+  if (scanBusy || !scanSel.size) return
+  scanBusy = true
+  const names = [...scanSel]
+  const prog = $('#scanProg'); prog.style.display = ''; prog.firstElementChild.style.width = '0%'
+  let doneNew = 0, incomplete = 0
+  for (let i = 0; i < names.length; i++) {
+    await sleep(130)
+    const t = scanResult.find(x => x.name === names[i])
+    if (t) { if (isNew(t.name)) doneNew++; if (!t.complete) incomplete++ }
+    const fold = $(`#scanTables .fold[data-t="${CSS.escape(names[i])}"]`)
+    if (fold) fold.querySelector('.ip-st').innerHTML = '<span class="ok">✓</span>'
+    prog.firstElementChild.style.width = Math.round((i + 1) / names.length * 100) + '%'
+  }
+  const cov = names.length - doneNew
+  const skipped = scanResult.length - names.length
+  $('#scanStatus').innerHTML = `<div class="stack">
+    <div class="band ok flash"><b>✓ 导入完成：新增 ${doneNew} 张 · 覆盖 ${cov} 张</b>
+      ${skipped ? ` · 未勾选 ${skipped} 张没动` : ''}</div>
+    ${incomplete ? `<div class="band warn"><b>${incomplete} 张不完整的表也被你强行导入了</b>（勇气可嘉）——
+      它们在速查页会一直挂着 ⚠️，直到你补全来源。</div>` : ''}
+  </div>`
+  scanBusy = false
+}
+
+/* 进页面就停在方式二，但表单已填好示例 —— 点一下就能看到全流程 */
+</script>
+</body>
+</html>

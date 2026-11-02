@@ -1,0 +1,192 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>浅底试看 · 霜晶 · 码上 CodeNow</title>
+<link rel="stylesheet" href="_theme.css">
+<style>
+  .sec { margin-bottom: 0 }
+  .grp { display: flex; flex-wrap: wrap; gap: 9px 16px }
+  .cols { max-height: 200px; overflow: auto; display: flex; flex-direction: column; gap: 3px }
+  .cols label { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 5px; cursor: pointer }
+  .cols label:hover { background: color-mix(in srgb, var(--acc) 8%, transparent) }
+  .cols .cn { font: 12.5px/1.4 var(--mono) }
+  .cols .cc { font-size: 12.5px; color: var(--dimmer) }
+  .note {
+    margin: 0 22px 10px; max-width: 1360px;
+  }
+</style>
+<script>
+  /* 本页默认钉霜晶。壳脚本先读 localStorage，不先写会弹回深空霓虹。 */
+  try { localStorage.setItem('devtools-mockup-theme', 'frost') } catch (e) { /* file:// */ }
+</script>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="sqlgen"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">浅底试看 · 霜晶</div>
+        <div class="sub">现成白底主题，还没改应用默认。右上角色块可切回深色对比</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">非黑底 · 静态页</span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-in">
+        <div class="band info note" style="margin:0 0 14px">
+          这是<strong>霜晶</strong>：浅灰蓝底、白卡片。不是新皮，应用里右上角第 6 个色块就是它。
+          看完觉得行，再说要不要把默认从深空霓虹改过来。
+        </div>
+
+        <div class="split">
+          <div class="col">
+            <div class="card sec">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">① 选表和模式</span>
+                <div class="spacer"></div><span class="who">3 条外键</span></div>
+              <div class="cbody stack">
+                <div>
+                  <div class="lbl" style="margin-bottom:5px">主表</div>
+                  <select class="fld">
+                    <option selected>sys_user · 用户表</option>
+                    <option>sys_role · 角色</option>
+                  </select>
+                </div>
+                <div class="seg fill">
+                  <button class="on">单表 CRUD</button>
+                  <button>多表关联</button>
+                </div>
+                <div class="seg fill">
+                  <button class="on">可执行（填值）</button>
+                  <button>预编译 #{}</button>
+                </div>
+                <div class="row">
+                  <span class="lbl">方言</span>
+                  <div class="seg">
+                    <button class="on">Oracle</button>
+                    <button>MySQL</button>
+                    <button>PostgreSQL</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card sec">
+              <div class="chead"><span class="h">② 语句类型</span></div>
+              <div class="cbody">
+                <div class="grp">
+                  <label class="cb"><input type="checkbox" checked><span>INSERT</span></label>
+                  <label class="cb"><input type="checkbox" checked><span>UPDATE</span></label>
+                  <label class="cb"><input type="checkbox"><span>DELETE</span></label>
+                  <label class="cb"><input type="checkbox" checked><span>SELECT</span></label>
+                </div>
+              </div>
+            </div>
+
+            <div class="card sec">
+              <div class="chead"><span class="h">③ 字段</span><span class="who">6 / 8</span>
+                <div class="spacer"></div>
+                <button class="mini" type="button">全选</button>
+                <button class="mini" type="button">全不选</button>
+              </div>
+              <div class="cbody">
+                <div class="cols">
+                  <label><input type="checkbox" checked><span class="cn">id</span><span class="cc">主键</span></label>
+                  <label><input type="checkbox" checked><span class="cn">username</span><span class="cc">登录名</span></label>
+                  <label><input type="checkbox" checked><span class="cn">nickname</span><span class="cc">昵称</span></label>
+                  <label><input type="checkbox" checked><span class="cn">status</span><span class="cc">状态</span></label>
+                  <label><input type="checkbox" checked><span class="cn">create_time</span><span class="cc">创建时间</span></label>
+                  <label><input type="checkbox"><span class="cn">update_time</span><span class="cc">更新时间</span></label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">生成结果 · INSERT</span>
+                <span class="who">1 条 · 可执行</span>
+                <div class="spacer"></div>
+                <div class="seg">
+                  <button class="on" type="button">SQL</button>
+                  <button type="button">MyBatis XML</button>
+                </div>
+              </div>
+              <div class="cbody stack">
+                <div class="code">
+                  <div class="code-bar">
+                    <span class="fn">INSERT_sys_user.sql</span>
+                    <button class="primary" type="button">在当前连接执行</button>
+                    <button class="mini" type="button">复制</button>
+                  </div>
+                  <pre class="sm" id="sql"></pre>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="chead"><span class="h">编辑表结构 · 字段密度</span>
+                <span class="who">看浅底上表格和输入框</span></div>
+              <div class="cbody">
+                <table class="tbl">
+                  <thead>
+                    <tr>
+                      <th>字段名</th>
+                      <th>类型</th>
+                      <th>长度</th>
+                      <th>注释</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><input class="fld mono" value="username"></td>
+                      <td><input class="fld mono" value="NVARCHAR2"></td>
+                      <td><input class="fld mono" value="50"></td>
+                      <td><input class="fld" value="登录名"></td>
+                    </tr>
+                    <tr>
+                      <td><input class="fld mono" value="parent_department_id"></td>
+                      <td><input class="fld mono" value="NUMBER"></td>
+                      <td><input class="fld mono" value="19"></td>
+                      <td><input class="fld" value="上级部门"></td>
+                    </tr>
+                    <tr>
+                      <td><input class="fld mono" value="create_time"></td>
+                      <td><input class="fld mono" value="DATE"></td>
+                      <td><input class="fld mono" placeholder="—"></td>
+                      <td><input class="fld" value="创建时间"></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="acts">
+                <button class="mini" type="button">+ 添加字段</button>
+                <div class="spacer"></div>
+                <button class="ghost" type="button">取消</button>
+                <button class="primary" type="button">保存到缓存</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script>
+  const sql = `INSERT INTO "sys_user" ("username", "nickname", "status", "create_time")
+VALUES ('test_user_01', '张三', 1, SYSDATE);`
+  document.getElementById('sql').innerHTML = UI.sqlHi(sql)
+</script>
+</body>
+</html>

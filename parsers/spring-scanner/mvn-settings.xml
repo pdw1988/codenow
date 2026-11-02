@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  只给 spring-scanner 构建用的 Maven settings。
+  用户全局 settings.xml 里的镜像还是 http://maven.aliyun.com/nexus/...（已废弃，
+  现在返回 HTML 错误页，缓存里全是毒 POM）。这里覆盖成新的 https 地址，
+  不动全局配置。构建命令：mvn -s mvn-settings.xml package
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <mirrors>
+    <mirror>
+      <id>aliyun-public</id>
+      <mirrorOf>central</mirrorOf>
+      <url>https://maven.aliyun.com/repository/public</url>
+    </mirror>
+  </mirrors>
+</settings>

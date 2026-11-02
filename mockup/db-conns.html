@@ -1,0 +1,370 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>我的连接 · 码上 CodeNow 原型</title>
+<link rel="stylesheet" href="_theme.css">
+<style>
+  .toast {
+    position: fixed; right: 22px; bottom: 22px; z-index: 20;
+    padding: 10px 14px; border-radius: var(--r2); border: 1px solid var(--line);
+    background: var(--panel); box-shadow: var(--glow); font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="dbconns"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">🔌 我的连接</div>
+        <div class="sub">起名收藏地址 · 测试/本地可记住密码 · 生产每次现输</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">原型 · 看形态，还没进真页面</span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-in">
+
+        <div class="band info" style="margin-bottom:14px">
+          <b>这一页管名字和地址。</b>
+          连库查询从列表里选。密码不进 JSON、不进 cache.db。测试/本地可记到系统凭据；生产每次现输。
+          真页面已接上同一套交互。
+        </div>
+
+        <div class="split">
+          <div class="col">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead">
+                <span class="dot"></span>
+                <span class="h">已保存</span>
+                <span class="who" id="listWho"></span>
+                <div class="spacer"></div>
+                <button class="mini" type="button" id="btnNew">新建</button>
+              </div>
+              <div class="cbody stack">
+                <input class="fld" id="q" placeholder="过滤名称 / 主机 / 库名 / 用户" aria-label="过滤连接" style="width:100%">
+                <div class="row tight" id="envChips"></div>
+                <div class="clist" id="list"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead">
+                <span class="dot"></span>
+                <span class="h">用这条去连库</span>
+                <span class="who">连库查询的入口</span>
+              </div>
+              <div class="cbody stack" id="useBox"></div>
+            </div>
+
+            <div class="card">
+              <i class="corner tl"></i>
+              <div class="chead">
+                <span class="dot"></span>
+                <span class="h" id="formTitle">新建连接</span>
+                <span class="who">跟连库查询同一张表单 · 不记密码</span>
+              </div>
+              <div class="cbody stack">
+                <div class="row">
+                  <span class="lbl">名称</span>
+                  <input class="fld" id="fName" placeholder="如 生产只读、本地 11g">
+                </div>
+                <div class="row">
+                  <span class="lbl">类型</span>
+                  <div class="seg" id="fKind">
+                    <button type="button" class="on" data-v="oracle">Oracle</button>
+                    <button type="button" data-v="mysql">MySQL</button>
+                    <button type="button" disabled title="PG 的系统目录不同，排后续版本">PostgreSQL</button>
+                  </div>
+                </div>
+                <div class="row">
+                  <span class="lbl">环境</span>
+                  <div class="seg" id="fEnv">
+                    <button type="button" data-v="prod">生产</button>
+                    <button type="button" class="on" data-v="test">测试</button>
+                    <button type="button" data-v="local">本地</button>
+                  </div>
+                </div>
+                <div class="row">
+                  <span class="lbl">主机</span>
+                  <input class="fld grow" id="fHost" placeholder="如 10.0.1.8">
+                  <span class="lbl">端口</span>
+                  <input class="fld fix" id="fPort" placeholder="1521" value="1521">
+                </div>
+                <div class="row">
+                  <span class="lbl">用户名</span>
+                  <input class="fld grow" id="fUser" placeholder="如 SCOTT">
+                </div>
+                <div class="row">
+                  <span class="lbl" id="fDbLbl">服务名</span>
+                  <input class="fld grow mono" id="fDb" placeholder="如 ORCLPDB1">
+                </div>
+                <span class="hint" id="fDbHint">填主机 + SERVICE_NAME。保存时不问密码，连库查询里现填。</span>
+                <div class="row">
+                  <span class="lbl">备注</span>
+                  <input class="fld grow" id="fRemark" placeholder="可选，如 只读账号，别拿去改数">
+                </div>
+                <div class="band info">只记地址，<b>不记密码</b>。同主机上 Oracle 和 MySQL 是两条。</div>
+                <div class="row">
+                  <span class="hint" id="fHint"></span>
+                  <div class="spacer"></div>
+                  <button class="mini" type="button" id="fCancel" hidden>取消编辑</button>
+                  <button class="primary" type="button" id="fSave">保存</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card sec" style="margin-top:14px">
+          <i class="corner tl"></i>
+          <div class="chead"><span class="dot"></span><span class="h">设计取舍 · 待你拍板</span>
+            <span class="who">真页面已接</span></div>
+          <div class="cbody stack" style="gap:8px;font-size:13px">
+            <div><b>1. 密码不进连接列表 ✅。</b>测试/本地可写入系统凭据（跨天免输）。生产不记、每次现输。</div>
+            <div><b>2. 连库查询未连接保留手填表单 ✅。</b>跟上一版同一张「连接信息」。点我的连接回填地址，有凭据再带密码。</div>
+            <div><b>3. 和「最近连接」的关系。</b>还没定：我的连接是起名保存的；最近 8 条仍是连过就记、没名字。也可以合并成只有这一份。</div>
+            <div><b>4. 环境标签。</b>生产 / 测试 / 本地。生产要不要连的时候多点一次确认？</div>
+            <div><b>5. 上限。</b>最近连接现在封 8 条。有名字的可以放到 20。</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script src="_data.js"></script>
+<script>
+(function () {
+  const { esc } = UI
+  const { CONN_ENV: ENV, CONN_KIND: KIND } = DATA
+  const $ = (id) => document.getElementById(id)
+  const theme = () => new URLSearchParams(location.search).get('t') || UI.theme()
+
+  const items = DATA.conns.map((c) => ({ ...c }))
+
+  let sel = 2
+  let editing = null
+  let envFilter = 'all'
+  let kind = 'oracle'
+  let env = 'test'
+
+  function toast(msg) {
+    const el = document.createElement('div')
+    el.className = 'toast'
+    el.textContent = msg
+    document.body.appendChild(el)
+    setTimeout(() => el.remove(), 2200)
+  }
+
+  function seg(el, value, onChange) {
+    el.querySelectorAll('button[data-v]').forEach((b) => {
+      b.classList.toggle('on', b.dataset.v === value)
+      b.onclick = () => {
+        if (b.disabled) return
+        onChange(b.dataset.v)
+      }
+    })
+  }
+
+  function shown() {
+    const q = $('q').value.trim().toLowerCase()
+    return items.filter((it) => {
+      if (envFilter !== 'all' && it.env !== envFilter) return false
+      if (!q) return true
+      return [it.name, it.host, it.db, it.user, KIND[it.kind]].join(' ').toLowerCase().includes(q)
+    })
+  }
+
+  function applyKindHint() {
+    if (kind === 'mysql') {
+      $('fDbLbl').textContent = '数据库名'
+      $('fDb').placeholder = '如 mall'
+      $('fDbHint').textContent = '库名手填。保存时不问密码，连库查询里现填。'
+    } else {
+      $('fDbLbl').textContent = '服务名'
+      $('fDb').placeholder = '如 ORCLPDB1'
+      $('fDbHint').textContent = '填主机 + SERVICE_NAME。保存时不问密码，连库查询里现填。'
+    }
+  }
+
+  function fillForm(it) {
+    $('fName').value = it ? it.name : ''
+    $('fHost').value = it ? it.host : ''
+    $('fPort').value = it ? it.port : (kind === 'mysql' ? '3306' : '1521')
+    $('fUser').value = it ? it.user : ''
+    $('fDb').value = it ? it.db : ''
+    $('fRemark').value = it ? it.remark : ''
+    kind = it ? it.kind : 'oracle'
+    env = it ? it.env : 'test'
+    $('formTitle').textContent = it ? '编辑连接' : '新建连接'
+    $('fCancel').hidden = !it
+    $('fHint').textContent = ''
+    applyKindHint()
+    seg($('fKind'), kind, (v) => {
+      kind = v
+      if (!editing) $('fPort').value = v === 'mysql' ? '3306' : '1521'
+      applyKindHint()
+      seg($('fKind'), kind, () => {})
+    })
+    seg($('fEnv'), env, (v) => { env = v; seg($('fEnv'), env, () => {}) })
+  }
+
+  function paintChips() {
+    const keys = ['all', 'prod', 'test', 'local']
+    $('envChips').innerHTML = keys.map((k) => {
+      const label = k === 'all' ? '全部' : ENV[k].label
+      const on = envFilter === k ? ' on' : ''
+      return `<button type="button" class="chip${on}" data-env="${k}">${label}</button>`
+    }).join('')
+    $('envChips').querySelectorAll('[data-env]').forEach((b) => {
+      b.onclick = () => { envFilter = b.dataset.env; paint() }
+    })
+  }
+
+  function paintUse() {
+    const it = items.find((x) => x.id === sel)
+    const box = $('useBox')
+    if (!it) {
+      box.innerHTML = '<div class="empty">左边点一条。连库查询会带上类型、地址、用户，密码这里现填。</div>'
+      return
+    }
+    const e = ENV[it.env]
+    box.innerHTML = `
+      <div class="row tight">
+        <b>${esc(it.name)}</b>
+        <span class="tag ${e.tone}">${e.label}</span>
+        <span class="tag hi">${KIND[it.kind]}</span>
+      </div>
+      <div class="mono" style="font-size:12.5px;color:var(--dim)">${esc(it.host)}:${esc(it.port)}/${esc(it.db)} · ${esc(it.user)}</div>
+      ${it.remark ? `<span class="hint">${esc(it.remark)}</span>` : ''}
+      <div class="row">
+        <span class="lbl">密码</span>
+        <input class="fld grow" id="usePass" type="password" placeholder="不保存" aria-label="密码">
+        <button class="primary" type="button" id="useGo">连接并查询</button>
+      </div>
+      <div class="row tight">
+        <button class="mini" type="button" id="useEdit">编辑这条</button>
+        <button class="mini" type="button" id="useDel">删除</button>
+        <span class="hint">点了会跳到「连库查询」工作台，并带上这条地址。原型只演示，不真连。</span>
+      </div>`
+    $('useGo').onclick = () => {
+      location.href = 'db-query.html?t=' + theme() + '&c=' + it.id
+    }
+    $('useEdit').onclick = () => {
+      editing = it.id
+      fillForm(it)
+      paint()
+      $('fName').focus()
+    }
+    $('useDel').onclick = () => {
+      const i = items.findIndex((x) => x.id === it.id)
+      if (i < 0) return
+      items.splice(i, 1)
+      sel = items[0] ? items[0].id : null
+      editing = null
+      fillForm(null)
+      paint()
+      toast('原型：已从本页列表拿掉')
+    }
+  }
+
+  function paintList() {
+    const rows = shown()
+    $('listWho').textContent = `${rows.length} / ${items.length}`
+    if (!rows.length) {
+      $('list').innerHTML = '<div class="empty">没有命中的连接。换个词，或点新建。</div>'
+      return
+    }
+    $('list').innerHTML = rows.map((it) => {
+      const e = ENV[it.env]
+      return `<button type="button" class="citem${it.id === sel ? ' on' : ''}" data-id="${it.id}">
+        <div class="fr">
+          <span class="nm">${esc(it.name)}</span>
+          <span class="tag ${e.tone}">${e.label}</span>
+          <span class="tag hi">${KIND[it.kind]}</span>
+        </div>
+        <div class="addr">${esc(it.host)}:${esc(it.port)}/${esc(it.db)}</div>
+        <div class="who">${esc(it.user)}${it.remark ? ' · ' + esc(it.remark) : ''}</div>
+      </button>`
+    }).join('')
+    $('list').querySelectorAll('.citem').forEach((b) => {
+      b.onclick = () => {
+        sel = Number(b.dataset.id)
+        editing = null
+        fillForm(null)
+        paint()
+      }
+    })
+  }
+
+  function paint() {
+    paintChips()
+    paintList()
+    paintUse()
+    seg($('fKind'), kind, (v) => {
+      kind = v
+      if (!editing) $('fPort').value = v === 'mysql' ? '3306' : '1521'
+      applyKindHint()
+    })
+    seg($('fEnv'), env, (v) => { env = v })
+  }
+
+  $('q').oninput = paint
+  $('btnNew').onclick = () => {
+    editing = null
+    sel = null
+    fillForm(null)
+    paint()
+    $('fName').focus()
+  }
+  $('fCancel').onclick = () => {
+    editing = null
+    fillForm(null)
+    paint()
+  }
+  $('fSave').onclick = () => {
+    const name = $('fName').value.trim()
+    const host = $('fHost').value.trim()
+    const port = $('fPort').value.trim()
+    const user = $('fUser').value.trim()
+    const db = $('fDb').value.trim()
+    if (!name || !host || !port || !user || !db) {
+      $('fHint').textContent = '名称、主机、端口、用户、库名都要填'
+      return
+    }
+    const patch = { name, kind, env, host, port, user, db, remark: $('fRemark').value.trim() }
+    if (editing != null) {
+      const it = items.find((x) => x.id === editing)
+      if (it) Object.assign(it, patch)
+    } else {
+      const id = items.reduce((m, x) => Math.max(m, x.id), 0) + 1
+      items.push({ id, ...patch })
+      sel = id
+    }
+    editing = null
+    fillForm(null)
+    paint()
+    toast('原型：已记在本页内存里，刷新就没了')
+  }
+
+  fillForm(null)
+  paint()
+})()
+</script>
+</body>
+</html>

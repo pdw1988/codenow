@@ -1,0 +1,56 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "CodeNow",
+  "version": "1.13.2",
+  "identifier": "com.pdw.devtools",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "码上 CodeNow · Java 开发平台",
+        "width": 1280,
+        "height": 880,
+        "minWidth": 960,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true,
+        "decorations": false,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/spring-scanner.jar"
+    ],
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkxMUE3ODMwNDY4MDM5NzEKUldSeE9ZQkdNSGdha2NaeklpQmlMRE5KY0YvamxUaXdHTm44YkZRT3JFTWlqaDlqWDJJRU5Qa1IK",
+      "endpoints": [
+        "https://raw.githubusercontent.com/pdw1988/devtools-releases/main/latest.json",
+        "https://gitee.com/pdwcloud/devtools-releases/raw/master/latest.json"
+      ]
+    }
+  }
+}

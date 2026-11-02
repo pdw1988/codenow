@@ -1,0 +1,562 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<title>SQL 生成 · 码上 CodeNow 原型</title>
+<link rel="stylesheet" href="_theme.css">
+<style>
+  .sec{ margin-bottom:0 }
+  .grp{ display:flex; flex-wrap:wrap; gap:9px 16px }
+  .cols{ max-height:238px; overflow:auto; display:flex; flex-direction:column; gap:3px; padding-right:4px }
+  .cols label{ display:flex; align-items:center; gap:8px; padding:3px 4px; border-radius:5px; cursor:pointer }
+  .cols label:hover{ background:color-mix(in srgb, var(--acc) 8%, transparent) }
+  .cols .cn{ font:12.5px/1.4 var(--mono) } .cols .cc{ font-size:12.5px; color:var(--dimmer) }
+  .tpl{ display:flex; align-items:center; gap:9px; padding:8px 10px; border:1px solid var(--line);
+        border-radius:var(--r2); cursor:pointer; transition:.14s }
+  .tpl:hover{ border-color:var(--line2); background:color-mix(in srgb, var(--acc) 8%, transparent) }
+  .tpl .nm{ font-size:13.5px; font-weight:600 } .tpl .ds{ font:11.5px/1.3 var(--mono); color:var(--dimmer) }
+  .vsec{ margin-bottom:12px } .vsec:last-child{ margin-bottom:0 }
+  .vsec > .lbl{ margin-bottom:6px; display:block }
+  .rel{ display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--line);
+        border-radius:var(--r2); flex-wrap:wrap } .rel + .rel{ margin-top:7px }
+  .rel .fk{ font:12.5px/1.4 var(--mono) }
+</style>
+</head>
+<body>
+<div class="hud" data-hud></div>
+
+<div class="app">
+  <aside class="rail" data-rail data-page="sqlgen"></aside>
+
+  <main class="main">
+    <div class="top">
+      <div>
+        <div class="title">📝 SQL 生成</div>
+        <div class="sub">左边一改，右边即出 · 单表 CRUD / 多表关联 / MyBatis XML</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="auto">无「生成」按钮 · 配置即结果</span>
+      <div class="sep"></div>
+      <div data-tp></div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-in">
+        <div class="split">
+          <!-- 左：配置 -->
+          <div class="col">
+            <div class="card sec">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">① 选表和模式</span>
+                <div class="spacer"></div><span class="who" id="fkCnt"></span></div>
+              <div class="cbody stack">
+                <div>
+                  <div class="lbl" style="margin-bottom:5px">主表</div>
+                  <select class="fld" id="main"></select>
+                </div>
+                <div class="seg" id="mode" style="width:100%">
+                  <button data-v="single" style="flex:1">单表 CRUD</button>
+                  <button data-v="multi" style="flex:1">多表关联</button>
+                </div>
+                <div class="seg" id="kind" style="width:100%">
+                  <button data-v="executable" style="flex:1">可执行（填值）</button>
+                  <button data-v="prepared" style="flex:1">预编译 #{}</button>
+                </div>
+                <div class="row">
+                  <span class="lbl">方言</span>
+                  <div class="seg" id="dia"></div>
+                  <div class="spacer"></div>
+                  <label class="cb"><input type="checkbox" id="hdr" checked><span>注释头</span></label>
+                </div>
+              </div>
+            </div>
+
+            <div class="card sec" id="crudCard">
+              <div class="chead"><span class="h">② 语句类型</span></div>
+              <div class="cbody">
+                <div class="grp" id="crud"></div>
+              </div>
+            </div>
+
+            <div class="card sec" id="colCard">
+              <div class="chead"><span class="h">③ 字段</span><span class="who" id="colCnt"></span>
+                <div class="spacer"></div>
+                <button class="mini" id="allCols">全选</button>
+                <button class="mini" id="noneCols">全不选</button>
+                <button class="mini" id="noAudit">排除审计字段</button>
+              </div>
+              <div class="cbody"><div class="cols" id="cols"></div></div>
+            </div>
+
+            <div class="card sec" id="relCard" style="display:none">
+              <div class="chead"><span class="h">③ 关联关系</span>
+                <div class="spacer"></div><span class="who">绿色默认勾 · 橙色需确认</span></div>
+              <div class="cbody" id="rels"></div>
+            </div>
+
+            <div class="card sec">
+              <div class="chead"><span class="h">模板</span>
+                <div class="spacer"></div><span class="auto">点一下直接套用</span></div>
+              <div class="cbody stack">
+                <div id="tpls" class="stack" style="gap:7px"></div>
+                <input class="fld" id="tplNew" placeholder="把当前配置存成模板：起个名字，回车即存">
+              </div>
+            </div>
+          </div>
+
+          <!-- 右：值 + 结果 -->
+          <div class="col">
+            <div class="card" id="valCard">
+              <i class="corner tl"></i>
+              <div class="chead"><span class="dot"></span><span class="h">④ 数据值</span>
+                <span class="who">自动造的，可直接改</span>
+                <div class="spacer"></div>
+                <button class="mini" id="reseed">↻ 换一套</button>
+              </div>
+              <div class="cbody" id="vals"></div>
+            </div>
+
+            <div class="card">
+              <i class="corner br"></i>
+              <div class="chead">
+                <span class="dot"></span><span class="h">生成结果</span>
+                <span class="who" id="statLbl"></span>
+                <div class="spacer"></div>
+                <div class="seg" id="out">
+                  <button data-v="sql">SQL</button>
+                  <button data-v="mybatis">MyBatis XML</button>
+                </div>
+              </div>
+              <div class="cbody stack">
+                <div class="band warn" id="warn"></div>
+                <div class="code">
+                  <div class="code-bar">
+                    <span class="fn" id="fname"></span>
+                    <button class="mini" id="cp">复制</button>
+                  </div>
+                  <pre class="lg" id="code"></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="_shell.js"></script>
+<script src="_data.js"></script>
+<script>
+const { tables, byName, fksOf, DIALECTS } = DATA
+const { esc, sqlHi, xmlHi, copy } = UI
+const $ = s => document.querySelector(s)
+
+const CRUD = { insert: 'INSERT', update: 'UPDATE', delete: 'DELETE', select: 'SELECT' }
+const AUDIT = /^(create|update)_(time|at|by)$/i
+
+const S = {
+  main: 'order', mode: 'single', kind: 'executable', out: 'sql', dia: 'mysql',
+  crud: ['insert', 'update', 'delete', 'select'], hdr: true,
+  cols: null,       // null = 全选。跟「用户手动清空了」要分得开
+  links: null,      // key -> {on,type}，按 linksKey 重建
+  linksKey: '',
+  seed: 1,
+  vals: {},         // 用户手改过的值。自动值不进 state，见 CLAUDE.md
+  conds: null,      // null = 只按主键；[] = 用户清空了，SELECT 退化成查前 20 条
+  cvals: {},
+}
+
+const TPLS = [
+  { nm: '订单可执行插入', ds: 'order · 单表 · INSERT · MySQL', cfg: { main: 'order', mode: 'single', kind: 'executable', crud: ['insert'], dia: 'mysql' } },
+  { nm: 'Oracle 订单全量', ds: 'order · 单表 · 全部 · Oracle', cfg: { main: 'order', mode: 'single', kind: 'executable', crud: ['insert', 'update', 'delete', 'select'], dia: 'oracle' } },
+  { nm: '订单关联查询', ds: 'order · 多表 · 预编译', cfg: { main: 'order', mode: 'multi', kind: 'prepared', crud: ['select'], dia: 'mysql' } },
+]
+
+/* ---------------- 标识符与字面量 ---------------- */
+// 只给保留字加引号。全字段无脑加引号在 MySQL 里能跑，但粘到别处几乎都要手删一遍
+const RESERVED = new Set(['order', 'user', 'group', 'table', 'key', 'index', 'desc', 'comment',
+  'level', 'number', 'date', 'value', 'check', 'session', 'mode', 'view', 'raw', 'size', 'start', 'no'])
+const qi = s => (RESERVED.has(s.toLowerCase()) ? DIALECTS[S.dia].q(s) : s)
+const camel = s => s.replace(/_([a-z0-9])/g, (m, x) => x.toUpperCase())
+
+/** 造值：(seed, 表, 字段) 决定，不用 Math.random —— 同样的配置每次看到的必须是同一套 */
+function mock(t, c) {
+  const D = DIALECTS[S.dia]
+  const n = S.seed
+  const num = (base, span) => String(base + ((n - 1) * 7 + t.name.length) % span)
+  if (c.j === 'Boolean') return D.bool(true)
+  if (c.j === 'LocalDateTime' || /^(DATE|DATETIME|TIMESTAMP)/i.test(c.t)) return D.date(`2026-08-24 1${(n % 5)}:30:00`)
+  if (c.j === 'BigDecimal') return (99 + n * 100) + '.00'
+  if (c.j === 'Long' || c.j === 'Integer') {
+    if (c.pk) return num(1001, 900)
+    if (/_id$/.test(c.n)) return num(1001, 900)
+    if (c.n === 'status') return c.d ?? '0'
+    if (c.n === 'quantity') return String(1 + n % 5)
+    if (c.n === 'stock') return String(100 * n)
+    return num(1, 100)
+  }
+  const s = v => `'${v}'`
+  if (c.n === 'username') return s('test_user_' + String(n).padStart(2, '0'))
+  if (c.n === 'password') return s('e10adc3949ba59abbe56e057f20f883e')
+  if (c.n === 'email') return s(`test${String(n).padStart(2, '0')}@example.com`)
+  if (c.n === 'order_no') return s('NO2026082400' + n)
+  if (c.n === 'code') return s('ROLE_ADMIN')
+  if (c.n === 'action') return s('UPDATE_ORDER')
+  if (c.n === 'detail') return s('把订单 NO2026082400' + n + ' 状态改成已付')
+  if (c.n === 'name') return s(t.name === 'product' ? '测试商品' + n : '管理员')
+  return s('测试' + (c.c || c.n))
+}
+const valOf = (t, c, map) => (map[c.n] !== undefined ? map[c.n] : mock(t, c))
+
+/* 空值是 IS NULL，永远不是 = NULL —— 后者恒为 unknown，查不出行也删不掉行，还不报错 */
+function cond(c, lit) {
+  const v = String(lit).trim()
+  if (v === '' || /^null$/i.test(v)) return `${qi(c.n)} IS NULL`
+  return `${qi(c.n)} = ${v}`
+}
+
+/* ---------------- 生成 SQL ---------------- */
+function genSql() {
+  const t = byName[S.main], D = DIALECTS[S.dia]
+  const exec = S.kind === 'executable' && S.mode === 'single'
+  const out = []
+  const head = txt => { if (S.hdr) out.push(`-- ${txt}`) }
+
+  if (S.mode === 'multi') {
+    const links = activeLinks()
+    if (!links.length) return '-- 还没有勾选任何关联关系\n-- 命名推断出来的关联默认不勾，需要你确认字段含义是不是真的对应'
+    const alias = {}; let i = 0
+    const aliasOf = n => alias[n] ?? (alias[n] = n.split('_').map(x => x[0]).join('') + (++i))
+    aliasOf(t.name)
+    links.forEach(l => { aliasOf(l.fk.from); aliasOf(l.fk.to) })
+    head(`多表关联查询：${t.name} 关联 ${links.length} 张表`)
+    head(`输出列一律带表前缀别名 —— 两张表都有 id/status/create_time，不加别名 ResultSet 会静默覆盖`)
+    const sel = []
+    Object.keys(alias).forEach(tn => byName[tn].columns.forEach(c =>
+      sel.push(`  ${aliasOf(tn)}.${qi(c.n)} AS ${aliasOf(tn)}_${c.n}`)))
+    out.push('SELECT')
+    out.push(sel.join(',\n'))
+    out.push(`FROM ${qi(t.name)} ${aliasOf(t.name)}`)
+    links.forEach(l => {
+      const other = l.fk.from === t.name ? l.fk.to : l.fk.from
+      out.push(`${l.type} JOIN ${qi(other)} ${aliasOf(other)}`
+        + ` ON ${aliasOf(l.fk.from)}.${qi(l.fk.fromCol)} = ${aliasOf(l.fk.to)}.${qi(l.fk.toCol)}`
+        + (l.fk.conf === 'naming' ? '  -- ⚠️ 命名推断，不是真外键' : ''))
+    })
+    out.push(`ORDER BY ${aliasOf(t.name)}.${qi(t.columns.find(c => c.pk).n)} DESC`)
+    out.push(D.page(20) + ';')
+    return out.join('\n')
+  }
+
+  const picked = S.cols ?? t.columns.map(c => c.n)
+  const use = t.columns.filter(c => picked.includes(c.n))
+  const pks = t.columns.filter(c => c.pk)
+  const lit = c => (exec ? valOf(t, c, S.vals) : '#{' + camel(c.n) + '}')
+
+  if (S.crud.includes('insert')) {
+    // 自增主键不出现在列清单里：带上它等于让数据库的序列和手填值打架
+    const ins = use.filter(c => !(c.pk && c.ai))
+    head(`INSERT 插入一条 ${t.name}（${t.comment}）`)
+    out.push(`INSERT INTO ${qi(t.name)} (`)
+    out.push('  ' + ins.map(c => qi(c.n)).join(', '))
+    out.push(') VALUES (')
+    out.push('  ' + ins.map(lit).join(', '))
+    out.push(');', '')
+  }
+  if (S.crud.includes('update')) {
+    const sets = use.filter(c => !c.pk && !AUDIT.test(c.n))
+    head(`UPDATE 按主键改一条（审计字段不在 SET 里，那是入库时写的）`)
+    out.push(`UPDATE ${qi(t.name)} SET`)
+    out.push(sets.map(c => `  ${qi(c.n)} = ${lit(c)}`).join(',\n'))
+    out.push(`WHERE ${pks.map(c => cond(c, exec ? valOf(t, c, S.vals) : '#{' + camel(c.n) + '}')).join(' AND ')};`, '')
+  }
+  if (S.crud.includes('delete')) {
+    head('DELETE 按主键删一条')
+    out.push(`DELETE FROM ${qi(t.name)}`)
+    out.push(`WHERE ${pks.map(c => cond(c, exec ? valOf(t, c, S.vals) : '#{' + camel(c.n) + '}')).join(' AND ')};`, '')
+  }
+  if (S.crud.includes('select')) {
+    const conds = S.conds ?? pks.map(c => c.n)
+    const cc = t.columns.filter(c => conds.includes(c.n))
+    head(cc.length ? `SELECT 按 ${cc.map(c => c.n).join(' + ')} 查` : 'SELECT 没勾条件，退化成查前 20 条')
+    out.push('SELECT')
+    out.push('  ' + use.map(c => qi(c.n)).join(', '))
+    out.push(`FROM ${qi(t.name)}`)
+    if (cc.length) out.push('WHERE ' + cc.map(c => cond(c, exec ? valOf(t, c, S.cvals) : '#{' + camel(c.n) + '}')).join('\n  AND '))
+    out.push(`ORDER BY ${qi(pks[0].n)} DESC`)
+    out.push(DIALECTS[S.dia].page(20) + ';')
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+function genXml() {
+  const t = byName[S.main]
+  const picked = S.cols ?? t.columns.map(c => c.n)
+  const use = t.columns.filter(c => picked.includes(c.n))
+  const pks = t.columns.filter(c => c.pk)
+  const ins = use.filter(c => !(c.pk && c.ai))
+  const L = []
+  L.push('<?xml version="1.0" encoding="UTF-8"?>')
+  L.push('<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">')
+  L.push(`<mapper namespace="com.example.mapper.${t.javaClass}Mapper">`)
+  L.push('')
+  L.push(`  <resultMap id="BaseResultMap" type="com.example.entity.${t.javaClass}">`)
+  t.columns.forEach(c => L.push(`    <${c.pk ? 'id' : 'result'} column="${c.n}" property="${camel(c.n)}"/>`))
+  L.push('  </resultMap>')
+  L.push('')
+  L.push('  <sql id="Base_Column_List">')
+  L.push('    ' + use.map(c => qi(c.n)).join(', '))
+  L.push('  </sql>')
+  L.push('')
+  L.push(`  <insert id="insert" parameterType="com.example.entity.${t.javaClass}"${pks.length === 1 && pks[0].ai ? ` useGeneratedKeys="true" keyProperty="${camel(pks[0].n)}"` : ''}>`)
+  L.push(`    INSERT INTO ${qi(t.name)} (${ins.map(c => qi(c.n)).join(', ')})`)
+  L.push(`    VALUES (${ins.map(c => '#{' + camel(c.n) + '}').join(', ')})`)
+  L.push('  </insert>')
+  L.push('')
+  L.push(`  <update id="updateByPrimaryKeySelective" parameterType="com.example.entity.${t.javaClass}">`)
+  L.push(`    UPDATE ${qi(t.name)}`)
+  L.push('    <set>')
+  use.filter(c => !c.pk).forEach(c => {
+    L.push(`      <if test="${camel(c.n)} != null">${qi(c.n)} = #{${camel(c.n)}},</if>`)
+  })
+  L.push('    </set>')
+  L.push(`    WHERE ${pks.map(c => `${qi(c.n)} = #{${camel(c.n)}}`).join(' AND ')}`)
+  L.push('  </update>')
+  L.push('')
+  L.push('  <delete id="deleteByPrimaryKey">')
+  L.push(`    DELETE FROM ${qi(t.name)} WHERE ${pks.map(c => `${qi(c.n)} = #{${camel(c.n)}}`).join(' AND ')}`)
+  L.push('  </delete>')
+  L.push('')
+  L.push('  <select id="selectByPrimaryKey" resultMap="BaseResultMap">')
+  L.push('    SELECT <include refid="Base_Column_List"/>')
+  L.push(`    FROM ${qi(t.name)} WHERE ${pks.map(c => `${qi(c.n)} = #{${camel(c.n)}}`).join(' AND ')}`)
+  L.push('  </select>')
+  L.push('')
+  L.push('</mapper>')
+  return L.join('\n')
+}
+
+/* ---------------- 关联状态 ---------------- */
+function syncLinks() {
+  const rel = fksOf(S.main)
+  const key = rel.map(f => `${f.from}.${f.fromCol}>${f.to}.${f.toCol}`).join('|')
+  if (S.linksKey !== key) {
+    S.linksKey = key
+    // 真外键默认勾、命名推断默认不勾；JOIN 一律默认 LEFT
+    // （猜错方向时 LEFT 只是多几行 NULL，INNER 会把主表记录整条过滤掉）
+    S.links = rel.map(f => ({ fk: f, on: f.conf === 'constraint', type: 'LEFT' }))
+  }
+  return S.links
+}
+const activeLinks = () => syncLinks().filter(l => l.on)
+
+/* ---------------- 渲染 ---------------- */
+function renderConfig() {
+  const t = byName[S.main]
+  $('#main').innerHTML = tables.map(x =>
+    `<option value="${x.name}" ${x.name === S.main ? 'selected' : ''}>${x.name} — ${x.comment}（${x.columns.length} 字段）</option>`).join('')
+
+  const rel = syncLinks()
+  $('#fkCnt').textContent = rel.length ? `${rel.length} 条关联可用` : '这张表没有关联'
+  const mm = $('#mode').querySelector('[data-v="multi"]')
+  mm.disabled = !rel.length
+  if (!rel.length && S.mode === 'multi') S.mode = 'single'
+  $('#mode').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === S.mode))
+
+  // 多表关联下没有「可执行」的说法：JOIN 查询本来就是拿去读的，填一堆字面量不解决问题
+  $('#kind').querySelectorAll('button').forEach(b => {
+    b.disabled = S.mode === 'multi'
+    b.classList.toggle('on', S.mode === 'multi' ? b.dataset.v === 'prepared' : b.dataset.v === S.kind)
+  })
+
+  $('#dia').innerHTML = Object.entries(DIALECTS).map(([k, d]) =>
+    `<button data-v="${k}" class="${k === S.dia ? 'on' : ''}">${d.label}</button>`).join('')
+  $('#dia').querySelectorAll('button').forEach(b => { b.onclick = () => { S.dia = b.dataset.v; render() } })
+
+  $('#crudCard').style.display = S.mode === 'single' ? '' : 'none'
+  $('#colCard').style.display = S.mode === 'single' ? '' : 'none'
+  $('#relCard').style.display = S.mode === 'multi' ? '' : 'none'
+
+  $('#crud').innerHTML = Object.entries(CRUD).map(([k, v]) =>
+    `<label class="cb"><input type="checkbox" data-c="${k}" ${S.crud.includes(k) ? 'checked' : ''}><span>${v}</span></label>`).join('')
+  $('#crud').querySelectorAll('input').forEach(i => {
+    i.onchange = () => {
+      S.crud = [...$('#crud').querySelectorAll('input')].filter(x => x.checked).map(x => x.dataset.c)
+      render()
+    }
+  })
+
+  const picked = S.cols ?? t.columns.map(c => c.n)
+  $('#colCnt').textContent = `${picked.length}/${t.columns.length}`
+  $('#cols').innerHTML = t.columns.map(c =>
+    `<label><input type="checkbox" data-n="${c.n}" ${picked.includes(c.n) ? 'checked' : ''}
+       style="appearance:none;width:15px;height:15px;flex:none;border:1px solid var(--line2);border-radius:4px;cursor:pointer"
+       class="cbx">
+      <span class="cn">${c.n}</span>
+      ${c.pk ? '<span class="tag pk">PK</span>' : ''}
+      <span class="cc">${c.c || ''}</span></label>`).join('')
+  $('#cols').querySelectorAll('input').forEach(i => {
+    i.onchange = () => {
+      S.cols = [...$('#cols').querySelectorAll('input')].filter(x => x.checked).map(x => x.dataset.n)
+      render()
+    }
+  })
+
+  $('#rels').innerHTML = rel.map((l, i) => {
+    const s = S.links[i]
+    return `<div class="rel">
+      <label class="cb ${l.conf === 'naming' ? 'dim' : ''}"><input type="checkbox" data-i="${i}" ${s.on ? 'checked' : ''}></label>
+      <span class="fk">${l.from}.${l.fromCol} → ${l.to}.${l.toCol}</span>
+      ${l.conf === 'constraint' ? `<span class="tag ok">✅ ${l.name}</span>` : '<span class="tag wr">⚠️ 命名推断</span>'}
+      <div class="spacer"></div>
+      <div class="seg" data-jt="${i}">
+        ${['LEFT', 'INNER'].map(j => `<button data-j="${j}" class="${s.type === j ? 'on' : ''}">${j}</button>`).join('')}
+      </div></div>`
+  }).join('')
+  $('#rels').querySelectorAll('input').forEach(i => {
+    i.onchange = () => { S.links[+i.dataset.i].on = i.checked; render() }
+  })
+  $('#rels').querySelectorAll('[data-jt] button').forEach(b => {
+    b.onclick = () => { S.links[+b.parentElement.dataset.jt].type = b.dataset.j; render() }
+  })
+
+  $('#tpls').innerHTML = TPLS.map((x, i) =>
+    `<div class="tpl" data-i="${i}"><div><div class="nm">${x.nm}</div><div class="ds">${x.ds}</div></div>
+     <div class="spacer"></div><span class="tag hi">套用</span></div>`).join('')
+  $('#tpls').querySelectorAll('.tpl').forEach(el => {
+    el.onclick = () => {
+      Object.assign(S, TPLS[+el.dataset.i].cfg)
+      S.cols = null; S.vals = {}; S.cvals = {}; S.conds = null
+      render()
+    }
+  })
+}
+
+function renderValues() {
+  const t = byName[S.main]
+  const exec = S.kind === 'executable' && S.mode === 'single' && S.out === 'sql'
+  $('#valCard').style.display = exec ? '' : 'none'
+  if (!exec) return
+
+  const picked = S.cols ?? t.columns.map(c => c.n)
+  const rows = (list, map, tag) => `<div class="scroll"><table class="tbl">
+    <thead><tr><th style="width:150px">字段</th><th style="width:120px">类型</th><th>进 SQL 的样子（可改）</th><th style="width:120px">注释</th></tr></thead>
+    <tbody>${list.map(c => `<tr>
+      <td class="mono">${c.n}${c.pk ? ' <span class="tag pk">PK</span>' : ''}</td>
+      <td class="mono muted">${c.t}</td>
+      <td><input class="fld" data-m="${tag}" data-n="${c.n}" value="${esc(valOf(t, c, map))}"></td>
+      <td class="muted">${c.c || ''}</td></tr>`).join('')}</tbody></table></div>`
+
+  const insCols = t.columns.filter(c => picked.includes(c.n) && !(c.pk && c.ai))
+  const pks = t.columns.filter(c => c.pk)
+  const conds = S.conds ?? pks.map(c => c.n)
+
+  let h = ''
+  if (S.crud.includes('insert') || S.crud.includes('update')) {
+    h += `<div class="vsec"><span class="lbl">【INSERT / UPDATE 数据】</span>${rows(insCols, S.vals, 'v')}</div>`
+  }
+  if (S.crud.includes('update') || S.crud.includes('delete')) {
+    h += `<div class="vsec"><span class="lbl">【主键值 · UPDATE / DELETE 的 WHERE】</span>${rows(pks, S.vals, 'v')}</div>`
+  }
+  if (S.crud.includes('select')) {
+    h += `<div class="vsec"><span class="lbl">【SELECT 条件】不勾任何一条就退化成查前 20 条</span>
+      <div class="grp" style="margin:6px 0 8px">${t.columns.map(c =>
+      `<label class="cb"><input type="checkbox" data-cd="${c.n}" ${conds.includes(c.n) ? 'checked' : ''}><span class="mono" style="font-size:12.5px">${c.n}</span></label>`).join('')}</div>
+      ${conds.length ? rows(t.columns.filter(c => conds.includes(c.n)), S.cvals, 'c') : '<div class="band">没勾条件 —— 生成的 SELECT 只带排序和分页</div>'}</div>`
+  }
+  $('#vals').innerHTML = h || '<div class="empty">上面一种语句都没勾，没有需要填的值</div>'
+
+  $('#vals').querySelectorAll('input[data-n]').forEach(i => {
+    i.oninput = () => {
+      (i.dataset.m === 'c' ? S.cvals : S.vals)[i.dataset.n] = i.value
+      renderCode()   // 只重画结果，不重画整个值面板 —— 否则每敲一个字符光标就跳回头
+    }
+  })
+  $('#vals').querySelectorAll('input[data-cd]').forEach(i => {
+    i.onchange = () => {
+      S.conds = [...$('#vals').querySelectorAll('input[data-cd]')].filter(x => x.checked).map(x => x.dataset.cd)
+      render()
+    }
+  })
+}
+
+function renderCode() {
+  const t = byName[S.main]
+  const exec = S.kind === 'executable' && S.mode === 'single'
+  const sql = genSql()
+  const code = S.out === 'sql' ? sql : genXml()
+  $('#code').innerHTML = S.out === 'sql' ? sqlHi(code) : xmlHi(code)
+  $('#code').dataset.raw = code
+  $('#fname').textContent = S.out === 'sql'
+    ? `${S.main}_${S.mode === 'multi' ? 'join' : (exec ? 'exec' : 'prepared')}_${S.dia}.sql`
+    : `${t.javaClass}Mapper.xml`
+  $('#out').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === S.out))
+  $('#statLbl').textContent = `${code.split('\n').length} 行 · ${code.length} 字符`
+
+  const w = $('#warn')
+  if (S.out === 'mybatis') {
+    w.className = 'band info'
+    w.innerHTML = 'MyBatis XML 始终是预编译的 <b>#{}</b> 参数，「可执行」只影响上面的 SQL 输出；namespace 默认 <b>com.example.mapper</b>，生成后自行替换。'
+  } else if (S.mode === 'multi') {
+    const nm = activeLinks().filter(l => l.fk.conf === 'naming').length
+    w.className = 'band ' + (nm ? 'warn' : 'info')
+    w.innerHTML = nm
+      ? `勾了 <b>${nm}</b> 条命名推断的关联 —— 它们不是真外键，JOIN 条件对不对得你自己确认。`
+      : '关联全部来自真实外键约束，JOIN 条件可信。输出列带表前缀别名，避免 ResultSet 静默覆盖。'
+  } else if (exec) {
+    w.className = 'band warn'
+    w.innerHTML = '值是自动造的测试数据，下面的语句<b>可以直接执行</b> —— 执行前确认一下它不会打乱现有数据。'
+  } else {
+    w.className = 'band info'
+    w.innerHTML = '预编译输出，<b>#{}</b> 占位符原样保留，直接贴进 Mapper 用。'
+  }
+}
+
+function render() { renderConfig(); renderValues(); renderCode() }
+
+$('#main').onchange = e => {
+  S.main = e.target.value
+  // 换主表要连带清掉字段选择和手填的值：上一张表的 username 填在这张表上没有意义
+  S.cols = null; S.vals = {}; S.cvals = {}; S.conds = null
+  render()
+}
+$('#mode').querySelectorAll('button').forEach(b => { b.onclick = () => { if (!b.disabled) { S.mode = b.dataset.v; render() } } })
+$('#kind').querySelectorAll('button').forEach(b => { b.onclick = () => { if (!b.disabled) { S.kind = b.dataset.v; render() } } })
+$('#out').querySelectorAll('button').forEach(b => { b.onclick = () => { S.out = b.dataset.v; render() } })
+$('#hdr').onchange = e => { S.hdr = e.target.checked; renderCode() }
+$('#allCols').onclick = () => { S.cols = null; render() }
+$('#noneCols').onclick = () => { S.cols = []; render() }
+$('#noAudit').onclick = () => {
+  const t = byName[S.main]
+  S.cols = t.columns.filter(c => c.pk || !AUDIT.test(c.n)).map(c => c.n)
+  render()
+}
+$('#reseed').onclick = () => {
+  S.seed++
+  // 手改过的也一起丢掉：用户按的是「换一套」，留着旧覆盖值会让「换了但这几行没变」像 bug
+  S.vals = {}; S.cvals = {}
+  render()
+}
+$('#cp').onclick = () => copy($('#code').dataset.raw, $('#cp'))
+$('#tplNew').onkeydown = e => {
+  if (e.key !== 'Enter' || !e.target.value.trim()) return
+  TPLS.push({
+    nm: e.target.value.trim(),
+    ds: `${S.main} · ${S.mode === 'multi' ? '多表' : '单表'} · ${S.crud.map(k => CRUD[k]).join('/') || '无'} · ${DIALECTS[S.dia].label}`,
+    cfg: { main: S.main, mode: S.mode, kind: S.kind, crud: [...S.crud], dia: S.dia },
+  })
+  e.target.value = ''
+  render()
+}
+
+// 勾选框在 .cols 里是自己画的，样式跟 .cb input 一致
+const style = document.createElement('style')
+style.textContent = `.cols input:checked{background:var(--acc);border-color:var(--acc)}
+.cols input:checked::after{content:'✓';display:grid;place-items:center;height:100%;color:var(--acc-ink);font-size:11px;font-weight:800}`
+document.head.appendChild(style)
+
+render()
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "types": ["vite/client"],
+    "allowArbitraryExtensions": true,
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+
+    /* @app = 主代码（pro/ 里引主代码用）；@pro = 专业版入口，没有 pro/ 时退回占位（开源仓库里就是这样）。
+       tsconfig.app.free.json 强制按开源版查，有 pro/ 时也能验占位签名 */
+    "paths": {
+      "@app/*": ["./src/*"],
+      "@pro": ["./pro/src/index.ts", "./src/pro-stub/index.ts"]
+    }
+  },
+  "include": ["src", "pro/src"],
+  /* 测试文件要 node 类型（node:test / node:assert），单独走 tsconfig.test.json */
+  "exclude": ["src/**/*.test.ts", "pro/src/**/*.test.ts"]
+}

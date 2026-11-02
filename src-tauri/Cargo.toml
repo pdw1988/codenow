@@ -1,0 +1,71 @@
+[package]
+name = "devtools"
+version = "0.1.0"
+description = "码上 CodeNow：对着表结构，出一句能跑的 SQL"
+authors = ["pdw"]
+license = ""
+repository = ""
+edition = "2021"
+# oracledb（官方纯 Rust 驱动）要求 1.89+；本机 rustc 已高于此
+rust-version = "1.89"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "devtools_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.11.3", features = ["tray-icon"] }
+tauri-plugin-log = "2"
+# 全局 Ctrl+Shift+D 呼出/隐藏（PRD §8）。只在桌面平台编。
+tauri-plugin-global-shortcut = "2"
+# sqlite feature 会连带编译 bundled SQLite，用户机器无需预装
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+# 自动更新：检查/下载走 updater，装完重启走 process（relaunch）
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+# 选本地目录（APIForge 扫描根路径）：手填之外再给一个系统目录对话框
+tauri-plugin-dialog = "2"
+# 连用户的 Oracle 只读拉字典。不用 plugin-sql 的 mysql feature：sqlx 没有官方
+# Oracle 驱动，而且 sql:allow-execute 是给 cache.db 的，不能拿去连业务库。
+oracledb = "26.0.0-beta.2"
+# 11g：官方 oracledb 薄驱动拒掉协议 < 12.1。这条走本机 oci.dll（Instant Client）。
+oracle = "0.6"
+# 连用户的 MySQL 只读拉 information_schema。同样不走 plugin-sql。
+mysql = "25"
+# 连用户的 PostgreSQL 只读拉 pg_catalog。同样不走 plugin-sql。
+# native-tls：云库常要求 SSL；证书自签也放行（桌面工具连内网的常态）。
+postgres = "0.19"
+postgres-native-tls = "0.5"
+native-tls = "0.2"
+# 连用户本机 SQLite 文件。bundled：用户机不用预装。不走 plugin-sql。
+rusqlite = { version = "0.32", features = ["bundled"] }
+# Redis 客户端。自己写协议单机够用，但哨兵 / 集群再自己写不划算；用同步 API，
+# 跟其它驱动一样走 spawn_blocking，不引 tokio 新 feature。TLS 复用已有的 native-tls。
+redis = { version = "1.8", features = ["tls-native-tls"] }
+# 许可码只验公钥。私钥不进这个 crate。
+ed25519-dalek = "2"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# 压测引擎（PRD v0.4 模块 4.8）：tokio 定时 + reqwest 发压。两者都已在依赖树里
+# （tauri / updater 的传递依赖），这里显式点名，不新增编译负担。
+reqwest = "0.13"
+tokio = { version = "1", features = ["time"] }
+# SSH 终端（码上连）：交互式会话必须把 ssh 挂在伪终端上（Windows 的 ConPTY），
+# 标准库没有这能力。portable-pty 是 wezterm 的成熟封装，一套 API 盖三平台。
+# 零依赖红线在此破例一次：ssh 本体仍是系统 ssh.exe（~/.ssh/config、known_hosts、
+# 私钥照旧自动生效），portable-pty 只负责「给交互程序一块屏」，不碰 SSH 协议。
+# 只有专业版的终端用它；不做成 optional：专业版开关是 build.rs 看 pro/ 在不在自动定的，
+# feature 控制不了依赖。开源版多编一个用不到的小 crate，不影响运行。
+portable-pty = "0.9"
+
+[target.'cfg(not(windows))'.dependencies]
+# macOS / Linux：系统钥匙串。Windows 走 DPAPI 文件，不编这个。
+keyring = "3"
