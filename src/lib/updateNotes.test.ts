@@ -50,6 +50,13 @@ test('CHANGES.md 抽出标题和为什么，跳过不升号的条目', () => {
   assert.doesNotMatch(notes, /用户手册/)
 })
 
+test('标题末尾写「（不升）」的条目也跳过', () => {
+  const md = `## 2026-11-01 · 开源仓库导出脚本（不升）\n\n## 2026-11-01 · 修复镜像找不到扫描器（+0.0.1）\n`
+  const notes = notesFromChanges(md)
+  assert.doesNotMatch(notes, /导出脚本/)
+  assert.match(notes, /找不到扫描器/)
+})
+
 test('命令行只写「发版 v1.2.0」时改用 CHANGES.md，不能让弹窗只剩一句口号', () => {
   const notes = composeReleaseNotes('发版 v1.2.0', CHANGES)
   assert.match(notes, /粘贴 ALTER/)

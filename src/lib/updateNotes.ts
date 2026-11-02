@@ -30,6 +30,8 @@ export function notesFromChanges(md: string): string {
     if (/建议版本[\s\S]{0,120}不升/.test(block)) continue
     const title = block.match(/^##\s+(?:[^\n·]*·\s*)?(.+)/)?.[1]?.trim()
     if (!title) continue
+    // 标题末尾写「（不升）」也算：1.13.3 就是这样把内部条目漏进了更新弹窗
+    if (/[（(]不升[）)]$/.test(title)) continue
     // 提交信息代码块：第一行是 commit subject，空行后第一句是「为什么」
     const why = block.match(/```[^\n]*\n[^\n]+\n\n([^\n`]+)/)?.[1]?.trim()
     bullets.push(why ? `· ${title}\n  ${why}` : `· ${title}`)
