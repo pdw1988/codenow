@@ -44,10 +44,11 @@ export function LicenseTag() {
   const isPro = useLicenseStore((s) => s.isPro)
   const openUpgrade = useLicenseStore((s) => s.openUpgrade)
   const left = useLicenseStore(trialDaysLeft)
+  const to = useLicenseStore((s) => s.license?.to)
   if (!LICENSE_ENABLED) return null
   if (isPro) {
     return (
-      <Tag tone="ok" onClick={openUpgrade} title={left === null ? COPY.statusPro : COPY.statusTrial(left)}>
+      <Tag tone="ok" onClick={openUpgrade} title={left === null ? COPY.statusPro(to) : COPY.statusTrial(left)}>
         {left === null ? '专业版' : `试用 ${left} 天`}
       </Tag>
     )
@@ -66,8 +67,9 @@ export function StatusBar() {
   const isPro = useLicenseStore((s) => s.isPro)
   const openUpgrade = useLicenseStore((s) => s.openUpgrade)
   const left = useLicenseStore(trialDaysLeft)
+  const to = useLicenseStore((s) => s.license?.to)
   const proText = left === null ? '专业版' : `试用 ${left} 天`
-  const proTitle = left === null ? COPY.statusPro : COPY.statusTrial(left)
+  const proTitle = left === null ? COPY.statusPro(to) : COPY.statusTrial(left)
 
   return (
     <Stack gap={5}>

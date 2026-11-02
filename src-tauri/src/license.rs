@@ -1,10 +1,11 @@
 //! 专业版许可码：Ed25519 验签。
 //!
 //! 私钥只在作者机器 `~/.tauri/chuju-license.key`，签发走 `pro/scripts/issue-license.mjs`。
-//! 这里只有公钥。拆包改 `isPro` 仍能绕过本机闸门，但签不出能流通的真码。
+//! 公钥、试用记录镜像、专业版命令闸门在 license_guard（专业版实现在 pro/，开源版是占位）。
 //!
 //! 码形：`CHUJU2.<payload-b64url>.<sig-b64url>`，签名对象是前两段拼起来的 UTF-8。
 
+use crate::license_guard;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::NaiveDate;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
@@ -12,9 +13,6 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
-
-/// 与 `~/.tauri/chuju-license.key` 配对。换钥 = 已发出去的码全部失效。
-const PUBKEY_HEX: &str = "6df1d930b0e23bcf7a652811a0e8c9fc332dd57714e29fd7fd46725b578042b3";
 
 const PREFIX: &str = "CHUJU2";
 /// 用户在升级卡点「免费试用」起算，和 cache.db 同目录，清空表结构缓存不会重置。
@@ -31,25 +29,17 @@ pub struct LicenseInfo {
     pub kind: String,
     pub forever: bool,
     pub until: Option<String>,
+    /// 签发时写进去的买家称呼，界面显示「授权给 xxx」：码被转发就挂着别人的名字。老码没有。
+    pub to: Option<String>,
     pub code: String,
-}
-
-fn hex32(s: &str) -> Option<[u8; 32]> {
-    if s.len() != 64 {
-        return None;
-    }
-    let mut out = [0u8; 32];
-    for i in 0..32 {
-        out[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).ok()?;
-    }
-    Some(out)
 }
 
 fn b64url_decode(s: &str) -> Option<Vec<u8>> {
     URL_SAFE_NO_PAD.decode(s).ok()
 }
 
-fn parse_payload(raw: &str) -> Option<(bool, Option<String>)> {
+/// (forever, until, to)
+fn parse_payload(raw: &str) -> Option<(bool, Option<String>, Option<String>)> {
     let v: serde_json::Value = serde_json::from_str(raw).ok()?;
     if v.get("v")?.as_u64()? != 1 {
         return None;
@@ -57,8 +47,13 @@ fn parse_payload(raw: &str) -> Option<(bool, Option<String>)> {
     if v.get("kind")?.as_str()? != "pro" {
         return None;
     }
+    let to = v
+        .get("to")
+        .and_then(|x| x.as_str())
+        .map(|s| s.trim().chars().take(40).collect::<String>())
+        .filter(|s| !s.is_empty());
     if v.get("forever").and_then(|x| x.as_bool()) == Some(true) {
-        return Some((true, None));
+        return Some((true, None, to));
     }
     let until = v.get("until")?.as_str()?.to_string();
     if until.len() == 10
@@ -66,7 +61,7 @@ fn parse_payload(raw: &str) -> Option<(bool, Option<String>)> {
         && until.as_bytes()[7] == b'-'
         && until.bytes().all(|c| c.is_ascii_digit() || c == b'-')
     {
-        return Some((false, Some(until)));
+        return Some((false, Some(until), to));
     }
     None
 }
@@ -100,7 +95,7 @@ pub fn verify_code(code: &str, today: &str, pubkey: &[u8; 32]) -> Option<License
     vk.verify(msg.as_bytes(), &Signature::from_bytes(&sig_arr))
         .ok()?;
     let text = String::from_utf8(payload_raw).ok()?;
-    let (forever, until) = parse_payload(&text)?;
+    let (forever, until, to) = parse_payload(&text)?;
     if !still_valid(forever, &until, today) {
         return None;
     }
@@ -109,12 +104,9 @@ pub fn verify_code(code: &str, today: &str, pubkey: &[u8; 32]) -> Option<License
         kind: "pro".into(),
         forever,
         until,
+        to,
         code: code.to_string(),
     })
-}
-
-fn production_pubkey() -> [u8; 32] {
-    hex32(PUBKEY_HEX).expect("PUBKEY_HEX 必须是 32 字节 hex")
 }
 
 fn today_local() -> String {
@@ -211,9 +203,34 @@ fn write_stamp(path: &Path, stamp: &TrialStamp) {
     }
 }
 
-/// 读/写 AppData 里的试用标记。没有标记且不是 `start` 就算没开始、不写盘；
-/// 文件坏了当作废，不清空重开一轮。
-pub fn tick_trial(dir: Option<&Path>, today: &str, start: bool) -> TrialInfo {
+fn voided_stamp(today: &str) -> TrialStamp {
+    TrialStamp {
+        first_seen: today.to_string(),
+        last_seen: today.to_string(),
+        voided: true,
+    }
+}
+
+/// 几份记录合成一份：最早的起始、最晚的「见过」、任一份作废就作废。
+/// 日期写坏的那份不参与取最早 / 最晚，只看 voided。
+fn merge_stamps(all: &[TrialStamp]) -> Option<TrialStamp> {
+    let ok: Vec<&TrialStamp> = all
+        .iter()
+        .filter(|s| parse_ymd(&s.first_seen).is_some() && parse_ymd(&s.last_seen).is_some())
+        .collect();
+    let first = ok.iter().map(|s| s.first_seen.as_str()).min()?;
+    let last = ok.iter().map(|s| s.last_seen.as_str()).max()?;
+    Some(TrialStamp {
+        first_seen: first.to_string(),
+        last_seen: last.to_string(),
+        voided: all.iter().any(|s| s.voided),
+    })
+}
+
+/// 读/写 AppData 里的试用标记，`mirrors` 是 license_guard 从别处读来的副本。
+/// 哪一份都没有且不是 `start` 就算没开始、不写盘；任一份在就算试用过，删主文件不重开。
+/// 文件或副本坏了当作废。第二个返回值是要写回各副本的 JSON。
+pub fn tick_trial(dir: Option<&Path>, today: &str, start: bool, mirrors: &[String]) -> (TrialInfo, Option<String>) {
     let not_started = TrialInfo {
         started: false,
         active: false,
@@ -222,26 +239,25 @@ pub fn tick_trial(dir: Option<&Path>, today: &str, start: bool) -> TrialInfo {
         clock_tampered: false,
     };
     let Some(dir) = dir else {
-        return not_started;
+        return (not_started, None);
     };
     let path = trial_path(dir);
     let had_file = path.exists();
-    if !had_file && !start {
-        return not_started;
+    if !had_file && mirrors.is_empty() && !start {
+        return (not_started, None);
     }
-    let loaded = read_stamp(&path);
-    let stamp_in = if had_file && loaded.is_none() {
-        Some(TrialStamp {
-            first_seen: today.to_string(),
-            last_seen: today.to_string(),
-            voided: true,
-        })
-    } else {
-        loaded
-    };
-    let (next, info) = eval_trial(stamp_in.as_ref(), today);
+    let mut all: Vec<TrialStamp> = mirrors
+        .iter()
+        .map(|s| serde_json::from_str(s).unwrap_or_else(|_| voided_stamp(today)))
+        .collect();
+    if had_file {
+        all.push(read_stamp(&path).unwrap_or_else(|| voided_stamp(today)));
+    }
+    // 有记录但一份日期都不对：当作废，不当没试过
+    let merged = merge_stamps(&all).or_else(|| (!all.is_empty()).then(|| voided_stamp(today)));
+    let (next, info) = eval_trial(merged.as_ref(), today);
     write_stamp(&path, &next);
-    info
+    (info, serde_json::to_string(&next).ok())
 }
 
 /// 判到期用的「今天」：系统日期、记录的最晚日期、同目录文件最新修改日期三者取最晚。
@@ -285,7 +301,9 @@ fn effective_today(dir: Option<&Path>, today: &str) -> String {
 pub fn license_verify(app: AppHandle, code: String) -> Option<LicenseInfo> {
     let dir = app.path().app_data_dir().ok();
     let today = effective_today(dir.as_deref(), &today_local());
-    verify_code(&code, &today, &production_pubkey())
+    let info = license_guard::pubkey().and_then(|pk| verify_code(&code, &today, &pk));
+    license_guard::set_licensed(&app, info.is_some());
+    info
 }
 
 const CODE_FILE: &str = "license.v1.txt";
@@ -308,6 +326,7 @@ pub fn license_code_save(app: AppHandle, code: String) -> Result<(), String> {
     let path = code_path(&app).ok_or("取不到应用数据目录")?;
     let code = code.trim();
     if code.is_empty() {
+        license_guard::set_licensed(&app, false);
         let _ = fs::remove_file(&path);
         return Ok(());
     }
@@ -321,7 +340,13 @@ pub fn license_code_save(app: AppHandle, code: String) -> Result<(), String> {
 #[tauri::command]
 pub fn license_trial(app: AppHandle, start: bool) -> TrialInfo {
     let dir = app.path().app_data_dir().ok();
-    tick_trial(dir.as_deref(), &today_local(), start)
+    let mirrors = license_guard::mirror_read(&app);
+    let (info, json) = tick_trial(dir.as_deref(), &today_local(), start, &mirrors);
+    if let Some(json) = json {
+        license_guard::mirror_write(&app, &json);
+    }
+    license_guard::set_trial(&app, info.active);
+    info
 }
 
 #[cfg(test)]
@@ -412,17 +437,52 @@ mod tests {
     fn 没点试用不起算_点了再点不重置() {
         let dir = std::env::temp_dir().join(format!("devtools-trial-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        let idle = tick_trial(Some(&dir), "2026-10-01", false);
-        assert!(!idle.started && !idle.active);
+        let (idle, none) = tick_trial(Some(&dir), "2026-10-01", false, &[]);
+        assert!(!idle.started && !idle.active && none.is_none());
         assert!(!trial_path(&dir).exists());
-        assert!(tick_trial(Some(&dir), "2026-10-01", true).active);
-        let later = tick_trial(Some(&dir), "2026-10-05", true);
+        assert!(tick_trial(Some(&dir), "2026-10-01", true, &[]).0.active);
+        let (later, _) = tick_trial(Some(&dir), "2026-10-05", true, &[]);
         assert!(later.started && later.remaining_days == 3);
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn 生产公钥能解码() {
-        assert_eq!(production_pubkey().len(), 32);
+    fn 删了主文件副本还在_不重开() {
+        let dir = std::env::temp_dir().join(format!("devtools-trial-m-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let (_, json) = tick_trial(Some(&dir), "2026-10-01", true, &[]);
+        let mirror = json.expect("要写副本");
+        fs::remove_file(trial_path(&dir)).unwrap();
+        // 没点试用也认得试过；点了也不重新起算 7 天
+        let (seen, _) = tick_trial(Some(&dir), "2026-10-03", false, &[mirror.clone()]);
+        assert!(seen.started && seen.remaining_days == 5);
+        fs::remove_file(trial_path(&dir)).unwrap();
+        let (again, _) = tick_trial(Some(&dir), "2026-10-03", true, &[mirror.clone()]);
+        assert_eq!(again.remaining_days, 5);
+        fs::remove_file(trial_path(&dir)).unwrap();
+        let (over, _) = tick_trial(Some(&dir), "2026-10-09", true, &[mirror]);
+        assert!(!over.active);
+        // 副本写坏了当作废，不当没试过
+        fs::remove_file(trial_path(&dir)).unwrap();
+        let (bad, _) = tick_trial(Some(&dir), "2026-10-09", true, &["x".into()]);
+        assert!(!bad.active);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 几份记录取最早起始() {
+        let a = TrialStamp { first_seen: "2026-10-05".into(), last_seen: "2026-10-05".into(), voided: false };
+        let b = TrialStamp { first_seen: "2026-10-01".into(), last_seen: "2026-10-02".into(), voided: false };
+        let m = merge_stamps(&[a, b]).unwrap();
+        assert_eq!((m.first_seen.as_str(), m.last_seen.as_str(), m.voided), ("2026-10-01", "2026-10-05", false));
+    }
+
+    #[test]
+    fn 码里的买家名读得出_老码没有() {
+        let (sk, pk) = fixture();
+        let named = sign_payload(&sk, r#"{"v":1,"kind":"pro","forever":true,"to":" 张三 "}"#);
+        assert_eq!(verify_code(&named, "2026-08-30", &pk).unwrap().to.as_deref(), Some("张三"));
+        let old = sign_payload(&sk, r#"{"v":1,"kind":"pro","forever":true}"#);
+        assert_eq!(verify_code(&old, "2026-08-30", &pk).unwrap().to, None);
     }
 }

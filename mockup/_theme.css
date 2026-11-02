@@ -4684,6 +4684,8 @@ textarea.fld.flush.tall { min-height: 460px; font-size: 12.5px; line-height: 1.7
 }
 .logv-row:hover { background: var(--panel2) }
 .logv-row.on { background: var(--panel2); box-shadow: inset 2px 0 0 var(--acc) }
+/* 查周边的锚点：从筛选结果里点进来的那条，滚远了回来也认得出 */
+.logv-row.anchor { background: color-mix(in srgb, var(--warn) 14%, transparent); box-shadow: inset 3px 0 0 var(--warn) }
 .logv-ts { color: var(--dim); flex: none; width: 128px }
 .logv-lv { flex: none; width: 44px; text-align: center; font-weight: 600; border-radius: 4px }
 .logv-lv-error { color: #fff; background: #c0392b }

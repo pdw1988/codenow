@@ -66,6 +66,10 @@ tokio = { version = "1", features = ["time"] }
 # feature 控制不了依赖。开源版多编一个用不到的小 crate，不影响运行。
 portable-pty = "0.9"
 
+# 去掉符号名：反汇编时看不到 license_guard::allowed 这类函数名（macOS 包里原本带着）
+[profile.release]
+strip = true
+
 [target.'cfg(not(windows))'.dependencies]
 # macOS / Linux：系统钥匙串。Windows 走 DPAPI 文件，不编这个。
 keyring = "3"

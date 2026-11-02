@@ -106,7 +106,7 @@ export function UpgradeDlg() {
         )}
         <Band tone="ok">{COPY.payHint}</Band>
         {bought ? (
-          <Band tone="ok" title="本机已是专业版">
+          <Band tone="ok" title={license?.to ? `本机已是专业版 · 授权给 ${license.to}` : '本机已是专业版'}>
             批量回归、多页巡检、连服务器拉日志、SSH 终端全放开。
           </Band>
         ) : (

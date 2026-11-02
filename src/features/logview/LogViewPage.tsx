@@ -6,7 +6,7 @@
  * 归组（useMemo）→ 过滤（useMemo）→ 虚拟滚动列表。pattern 改了只重归组，
  * 不重读文件。列表固定行高、滚动窗口渲染——几十万条记录一次全渲染会把页面拖死。
  */
-import { useEffect, useMemo, useState, type ComponentProps } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import { App as AntdApp } from 'antd'
 import { Band, Btn, Cb, CopyBtn, Fld, Hint, Row, Seg, Spacer, useWidthDrag } from '../../components/ui'
 import { isTauri } from '../../storage'
@@ -17,6 +17,7 @@ import { EMPTY_FILTER, isValidRegex, makePredicate } from '../../lib/log/filter'
 import { inputFromWindow, windowFromInput } from '../../lib/log/window'
 import { matchRate, sniffPattern } from '../../lib/log/sniff'
 import { prettyJsonInText } from '../../lib/log/prettyMsg'
+import { aroundView, centerTop, type Around } from '../../lib/log/around'
 import { fmtBytes, fmtTime } from '../../lib/log/fmt'
 import { useLogStore } from '../../store/useLogStore'
 import { useLicenseStore } from '../../store/useLicenseStore'
@@ -199,20 +200,77 @@ export function LogViewPage() {
   const [viewH, listRef] = useViewHeight()
   const [scrollTop, setScrollTop] = useState(0)
   const [selected, setSelected] = useState<number | null>(null)
+  /** 查周边：非 null 时暂停筛选，列表显示锚点前后的完整日志 */
+  const [around, setAround] = useState<Around | null>(null)
+  const shown = useMemo(
+    () => (around ? aroundView(records, around, newestFirst) : filtered),
+    [around, records, newestFirst, filtered],
+  )
+  // 进出查周边要把某条滚到中间：列表按 key 重挂，只能等提交后（下一帧）拿新节点设 scrollTop，
+  // 设完触发 onScroll 再回填 scrollTop 状态
+  const listEl = useRef<HTMLDivElement | null>(null)
+  const setListEl = useCallback(
+    (el: HTMLDivElement | null) => {
+      listEl.current = el
+      listRef(el)
+    },
+    [listRef],
+  )
+  const scrollToRecord = (list: LogRecord[], index: number) => {
+    const pos = list.findIndex((r) => r.index === index)
+    if (pos < 0) return
+    requestAnimationFrame(() => {
+      const el = listEl.current
+      if (el) el.scrollTop = centerTop(pos, ROW_H, el.clientHeight)
+    })
+  }
+  const enterAround = (r: LogRecord) => {
+    const next: Around = { index: r.index, thread: r.thread, sameThread: false }
+    setAround(next)
+    setSelected(r.index)
+    scrollToRecord(aroundView(records, next, newestFirst), r.index)
+  }
+  const leaveAround = () => {
+    if (!around) return
+    setAround(null)
+    setSelected(around.index)
+    scrollToRecord(filtered, around.index)
+  }
+  const toggleSameThread = () => {
+    if (!around) return
+    if (around.thread === null) {
+      void message.info('这条记录没拆出线程名（pattern 里没有 %thread），没法按线程筛')
+      return
+    }
+    const next = { ...around, sameThread: !around.sameThread }
+    const list = aroundView(records, next, newestFirst)
+    // 选中的那条在新列表里还在就定位它，不在（别的线程）就回锚点
+    const focus = selected !== null && list.some((r) => r.index === selected) ? selected : around.index
+    setAround(next)
+    setSelected(focus)
+    scrollToRecord(list, focus)
+  }
   /** 详情卡高度拖拽（与时间线视图共用一个 hook / 一份记忆） */
   const { detailBodyRef, preStyle, onVsplitDown, onVsplitDouble } = useDetailDrag()
-  // 换来源 / pattern / 过滤变了：选中作废（旧行号对不上新列表）、滚动归零。
+  // 换来源 / pattern / 过滤变了：选中和查周边作废（旧行号对不上新列表）、滚动归零。
+  // 只换排序或进出查周边：列表重挂、滚动归零，选中留着（由上面几个函数滚过去）。
   // 渲染期调整状态 + key 重挂列表，比 effect 里 setState 干净（react-compiler 认）
-  const resetId = `${src?.fileId ?? 0}|${newestFirst}|${patternText}|${filter.levels.join(',')}|${filter.text}|${filter.regex}|${filter.caseSensitive}|${filter.since ?? ''}|${filter.until ?? ''}`
+  const baseId = `${src?.fileId ?? 0}|${timelineOn}|${patternText}|${filter.levels.join(',')}|${filter.text}|${filter.regex}|${filter.caseSensitive}|${filter.since ?? ''}|${filter.until ?? ''}`
+  const resetId = `${baseId}|${newestFirst}|${around ? `${around.index}|${around.sameThread}` : ''}`
+  const [lastBase, setLastBase] = useState(baseId)
   const [lastReset, setLastReset] = useState(resetId)
   if (lastReset !== resetId) {
     setLastReset(resetId)
-    setSelected(null)
     setScrollTop(0)
+    if (lastBase !== baseId) {
+      setLastBase(baseId)
+      setSelected(null)
+      setAround(null)
+    }
   }
   const start = Math.max(0, Math.floor(scrollTop / ROW_H) - WINDOW_PAD)
-  const end = Math.min(filtered.length, start + Math.ceil(viewH / ROW_H) + WINDOW_PAD * 2)
-  const rows = filtered.slice(start, end)
+  const end = Math.min(shown.length, start + Math.ceil(viewH / ROW_H) + WINDOW_PAD * 2)
+  const rows = shown.slice(start, end)
 
   const onOpen = () => {
     openLogFile().catch((e: unknown) => message.error(e instanceof Error ? e.message : String(e)))
@@ -477,7 +535,11 @@ export function LogViewPage() {
                     { value: 'old', label: '升序', title: '按时间升序：文件原本的顺序，从早到晚' },
                   ]}
                   value={newestFirst ? 'new' : 'old'}
-                  onChange={(v) => setNewestFirst(v === 'new')}
+                  onChange={(v) => {
+                    setNewestFirst(v === 'new')
+                    // 查周边里换排序：选中那条照样留在屏幕中间，不然一换就找不着了
+                    if (around) scrollToRecord(aroundView(records, around, v === 'new'), selected ?? around.index)
+                  }}
                 />
               </Row>
               <Row>
@@ -565,7 +627,37 @@ export function LogViewPage() {
           )}
 
           {/* 筛选是所有页签共用的：在别的页签设的关键字/时间窗带过来会把这份筛空，看着像没日志 */}
-          {filterTags.length > 0 && (timelineOn || (src && !src.loading)) && (
+          {/* 查周边：筛选暂停，给一条明显的出口回到筛选结果 */}
+          {around && !timelineOn && src && !src.loading && (
+            <Band tone="info" className="logv-filterband">
+              <span className="logv-filterband-t">
+                查周边：第 <b>{(around.index + 1 + src.lineOffset).toLocaleString()}</b> 行前后的完整日志
+                {around.sameThread && around.thread !== null && (
+                  <>
+                    ，只看线程 <b>{around.thread}</b>
+                  </>
+                )}
+                （筛选已暂停，改筛选条件会自动退出）
+              </span>
+              <Btn
+                variant="mini"
+                on={around.sameThread}
+                blocked={around.thread === null}
+                title={
+                  around.thread === null
+                    ? '这条记录没拆出线程名（pattern 里没有 %thread），没法按线程筛'
+                    : '并发请求的日志交错在一起时，只留这条记录所在线程的日志'
+                }
+                onClick={toggleSameThread}
+              >
+                只看同线程
+              </Btn>
+              <Btn variant="mini" onClick={leaveAround} title="回到筛选结果，定位到刚才那条">
+                返回筛选结果
+              </Btn>
+            </Band>
+          )}
+          {!around && filterTags.length > 0 && (timelineOn || (src && !src.loading)) && (
             <Band tone="warn" className="logv-filterband">
               <span className="logv-filterband-t">
                 筛选生效中（所有页签共用）：
@@ -590,7 +682,8 @@ export function LogViewPage() {
           ) : src && !src.loading && (
             <>
               <div className="logv-stats">
-                共 {records.length.toLocaleString()} 条记录，筛出 {filtered.length.toLocaleString()} 条
+                共 {records.length.toLocaleString()} 条记录，
+                {around ? `查周边显示 ${shown.length.toLocaleString()} 条` : `筛出 ${filtered.length.toLocaleString()} 条`}
                 （{src.kind === 'ssh' ? '已拉' : '文件'} {fmtBytes(src.sizeBytes)} · {src.encoding.toUpperCase()} ·{' '}
                 {src.kind === 'file' && src.lines.length < src.totalLines
                   ? `载入最后 ${src.lines.length.toLocaleString()} / 共 ${src.totalLines.toLocaleString()}`
@@ -599,7 +692,7 @@ export function LogViewPage() {
                 <b className={hitRate !== null && hitRate < 0.01 ? 'logv-rate-bad' : ''}>
                   {hitRate === null ? '—' : `${Math.round(hitRate * 100)}%`}
                 </b>
-                ）· 点任意一行看完整内容与堆栈（长行折行，不截断）
+                ）· 点任意一行看完整内容与堆栈，双击看它前后的日志
                 {!patternShown && (
                   <button type="button" className="logv-patlink" onClick={() => setPatOpen(true)}>
                     列拆得不对？改 pattern
@@ -610,10 +703,10 @@ export function LogViewPage() {
               <div
                 key={resetId}
                 className="logv-list"
-                ref={listRef}
+                ref={setListEl}
                 onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
               >
-                {filtered.length === 0 ? (
+                {shown.length === 0 ? (
                   <div className="logv-empty">
                     {grouping !== null || (big && records.length === 0)
                       ? '正在整理日志…'
@@ -624,13 +717,14 @@ export function LogViewPage() {
                       : '没有命中的记录——换换关键字或放宽级别。'}
                   </div>
                 ) : (
-                  <div style={{ height: filtered.length * ROW_H, position: 'relative' }}>
+                  <div style={{ height: shown.length * ROW_H, position: 'relative' }}>
                     {rows.map((r, i) => (
                       <div
                         key={r.index}
-                        className={`logv-row${selected === r.index ? ' on' : ''}`}
+                        className={`logv-row${selected === r.index ? ' on' : ''}${around?.index === r.index ? ' anchor' : ''}`}
                         style={{ top: (start + i) * ROW_H }}
                         onClick={() => setSelected(r.index)}
+                        onDoubleClick={() => enterAround(r)}
                       >
                         <span className="logv-ts">{fmtTime(r.ts)}</span>
                         <span className={`logv-lv logv-lv-${(r.level ?? 'NONE').toLowerCase()}`}>
@@ -669,6 +763,13 @@ export function LogViewPage() {
                       {r.logger && <span>{r.logger}</span>}
                       <span className="logv-detail-line">第 {(r.index + 1 + src.lineOffset).toLocaleString()} 行起</span>
                       <span style={{ flex: 1 }} />
+                      <Btn
+                        variant="mini"
+                        title="暂停筛选，看这条前后的完整日志（双击列表里的行也行）"
+                        onClick={() => enterAround(r)}
+                      >
+                        查周边
+                      </Btn>
                       <CopyBtn text={[r.raw, ...r.stack].join('\n')} />
                       <Btn
                         variant="mini"

@@ -8,6 +8,7 @@
 /**
  * 手拨闸门。`null` = 跟环境走（`pnpm dev` / `tauri:dev` 关，打包开）；
  * `true` 强制开（开发时要验升级卡就改这个）；`false` 强制关（安装包也不锁）。
+ * 注意：release 包里 Rust 侧还有一道门（pro/src-tauri/license_guard.rs），这里改 false 拦不住那边。
  */
 const LICENSE_OVERRIDE: boolean | null = null
 
@@ -27,6 +28,8 @@ export type LicensePayload = {
   forever?: boolean
   /** YYYY-MM-DD，当天结束仍有效 */
   until?: string
+  /** 签发时写进码里的买家称呼（防转发：界面显示「授权给 xxx」）；老码没有 */
+  to?: string | null
 }
 
 export type License = LicensePayload & { code: string }
@@ -42,7 +45,7 @@ export type Trial = {
 
 export const COPY = {
   statusFree: '免费版 · 专业版加拉服务器日志、SSH 终端、批量回归等',
-  statusPro: '专业版',
+  statusPro: (to?: string | null) => (to ? `专业版 · 授权给 ${to}` : '专业版'),
   statusTrial: (days: number) => `试用中，还剩 ${days} 天 · 到期回免费版，数据不丢`,
   payHint: '个人专业版 199 元 · 终身（当前设备）。要买：加微信 pdwcloud88，转账后把订单号发给这个号，回一行许可码，粘在下方即生效。许可只在本机校验，不上传表结构。',
 } as const

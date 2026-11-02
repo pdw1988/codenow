@@ -10,6 +10,12 @@ mod cred;
 #[cfg(desktop)]
 mod desktop;
 mod license;
+#[cfg(pro)]
+#[path = "../../pro/src-tauri/license_guard.rs"]
+mod license_guard;
+#[cfg(not(pro))]
+#[path = "license_guard_free.rs"]
+mod license_guard;
 mod log_file;
 // 专业版模块在仓库根的 pro/（将来是私有子模块），有 pro/ 时才编译（build.rs 设 cfg(pro)）。
 // 用 #[path] 引进来是为了 crate::log_ssh 这类路径不变。
@@ -40,6 +46,7 @@ mod ssh_tunnel;
 mod terminal;
 
 /// 命令清单：有 pro/ 才把专业版命令接在后面。generate_handler! 里不能写 cfg，只好套一层宏。
+/// 专业版清单改了要同步 license_guard 的 PRO_COMMANDS。
 #[cfg(pro)]
 macro_rules! handlers {
     ($($free:tt)*) => {
@@ -70,6 +77,21 @@ macro_rules! handlers {
     ($($free:tt)*) => {
         tauri::generate_handler![$($free)*]
     };
+}
+
+/// 专业版命令在入口再拦一道：只改前端 isPro 不够用（开源版 deny 恒为 false）。
+/// 套一层函数是为了给 generate_handler! 的闭包定下 Runtime 类型。
+fn gated<F>(inner: F) -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static
+where
+    F: Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static,
+{
+    move |invoke| {
+        if license_guard::deny(&invoke) {
+            invoke.resolver.reject(license_guard::DENIED);
+            return true;
+        }
+        inner(invoke)
+    }
 }
 
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -178,7 +200,8 @@ pub fn run() {
         .manage(postgres::PostgresState::new())
         .manage(sqlite::SqliteState::new())
         .manage(redis_client::RedisState::new())
-        .invoke_handler(handlers![
+        .manage(license_guard::Gate::default())
+        .invoke_handler(gated(handlers![
             oracle::oracle_connect,
             oracle::oracle_disconnect,
             oracle::oracle_columns,
@@ -237,7 +260,7 @@ pub fn run() {
             log_file::log_file_scan,
             log_file::log_file_slice,
             log_file::log_file_close,
-        ])
+        ]))
         .on_window_event(|window, event| {
             // 关主窗口 → 藏托盘。真正退出走托盘菜单「退出」。
             if window.label() != "main" {
